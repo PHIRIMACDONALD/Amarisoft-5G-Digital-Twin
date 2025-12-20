@@ -1,0 +1,156 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "panels": [
+    {
+      "title": "CPU Usage (Digital vs Physical)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "avg(100 - (rate(node_cpu_seconds_total{job=\"digital-twin\",mode=\"idle\"}[5m]) * 100))",
+          "legendFormat": "Digital Twin"
+        },
+        {
+          "expr": "avg(100 - (rate(node_cpu_seconds_total{job=\"physical-twin\",mode=\"idle\"}[5m]) * 100))",
+          "legendFormat": "Physical Twin"
+        }
+      ]
+    },
+    {
+      "title": "Memory Usage (Digital vs Physical)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "100 - (avg(node_memory_MemAvailable_bytes{job=\"digital-twin\"}) / avg(node_memory_MemTotal_bytes{job=\"digital-twin\"}) * 100)",
+          "legendFormat": "Digital Twin"
+        },
+        {
+          "expr": "100 - (avg(node_memory_MemAvailable_bytes{job=\"physical-twin\"}) / avg(node_memory_MemTotal_bytes{job=\"physical-twin\"}) * 100)",
+          "legendFormat": "Physical Twin"
+        }
+      ]
+    },
+    {
+      "title": "Disk Usage (Digital vs Physical)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "100 - (node_filesystem_avail_bytes{job=\"digital-twin\",fstype!=\"tmpfs\"} / node_filesystem_size_bytes{job=\"digital-twin\",fstype!=\"tmpfs\"} * 100)",
+          "legendFormat": "Digital Twin"
+        },
+        {
+          "expr": "100 - (node_filesystem_avail_bytes{job=\"physical-twin\",fstype!=\"tmpfs\"} / node_filesystem_size_bytes{job=\"physical-twin\",fstype!=\"tmpfs\"} * 100)",
+          "legendFormat": "Physical Twin"
+        }
+      ]
+    },
+    {
+      "title": "Network TX (bps) (Digital vs Physical)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(node_network_transmit_bytes_total{job=\"digital-twin\",device=\"ogstun\"}[5m]) * 8",
+          "legendFormat": "Digital Twin"
+        },
+        {
+          "expr": "rate(node_network_transmit_bytes_total{job=\"physical-twin\",device=\"tun0\"}[5m]) * 8",
+          "legendFormat": "Physical Twin"
+        }
+      ]
+    },
+    {
+      "title": "Network RX (bps) (Digital vs Physical)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(node_network_receive_bytes_total{job=\"digital-twin\",device=\"ogstun\"}[5m]) * 8",
+          "legendFormat": "Digital Twin"
+        },
+        {
+          "expr": "rate(node_network_receive_bytes_total{job=\"physical-twin\",device=\"tun0\"}[5m]) * 8",
+          "legendFormat": "Physical Twin"
+        }
+      ]
+    },
+    {
+      "title": "Packet Drops (Digital vs Physical)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(node_network_dropped_total{job=\"digital-twin\"}[5m])",
+          "legendFormat": "Digital Twin"
+        },
+        {
+          "expr": "rate(node_network_dropped_total{job=\"physical-twin\"}[5m])",
+          "legendFormat": "Physical Twin"
+        }
+      ]
+    },
+    {
+      "title": "Network Errors (Digital vs Physical)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(node_network_errs_total{job=\"digital-twin\"}[5m])",
+          "legendFormat": "Digital Twin"
+        },
+        {
+          "expr": "rate(node_network_errs_total{job=\"physical-twin\"}[5m])",
+          "legendFormat": "Physical Twin"
+        }
+      ]
+    },
+    {
+      "title": "System Load (1/5/15min)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "node_load1{job=\"digital-twin\"}",
+          "legendFormat": "Digital Twin - load1"
+        },
+        {
+          "expr": "node_load5{job=\"digital-twin\"}",
+          "legendFormat": "Digital Twin - load5"
+        },
+        {
+          "expr": "node_load15{job=\"digital-twin\"}",
+          "legendFormat": "Digital Twin - load15"
+        },
+        {
+          "expr": "node_load1{job=\"physical-twin\"}",
+          "legendFormat": "Physical Twin - load1"
+        },
+        {
+          "expr": "node_load5{job=\"physical-twin\"}",
+          "legendFormat": "Physical Twin - load5"
+        },
+        {
+          "expr": "node_load15{job=\"physical-twin\"}",
+          "legendFormat": "Physical Twin - load15"
+        }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 34,
+  "style": "dark",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "timezone": "",
+  "title": "Digital vs Physical Twin Metrics",
+  "uid": "twin-metrics"
+}

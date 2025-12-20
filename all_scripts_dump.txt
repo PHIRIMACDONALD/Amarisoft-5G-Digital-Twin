@@ -1,0 +1,988 @@
+============================== configuration.py ==============================
+slices = {}
+n_slices = 0
+n_users = int(input('Enter number of users: '))
+global_ip = 112
+global_subnet = 45
+users_slices = {}
+users_n_slices = {}  
+
+answers = [n_users]  # Store the answers, starting with the number of users
+
+for user_id in range(1, n_users + 1):
+    user_slices = {}
+    user_n_slices = int(input(f'Enter number of slices for user {user_id}: '))
+    answers.append(user_n_slices)  # Add the number of slices for this user
+    users_n_slices[user_id] = user_n_slices
+    user_total_slices = 0
+
+    for i in range(user_n_slices):
+        dnn = input(f'Enter DNN for slice {i + 1} of user {user_id}: ')
+        bw = input(f'Enter bandwidth (Mbps) for slice {i + 1} of user {user_id}: ')
+        
+        # Append the answers to the list
+        answers.extend([dnn, bw])
+        
+        user_slices[i] = {
+            'dnn': dnn,
+            'bw': bw,
+            'ip': '192.168.0.' + str(global_ip),
+            'subnet': '10.' + str(global_subnet) + '.0.1'
+        }
+        
+        slices[n_slices] = user_slices[i]
+        n_slices += 1
+        user_total_slices += 1
+        global_ip += 1
+        global_subnet += 1
+
+    users_slices[user_id] = user_slices
+    users_n_slices[user_id] = user_total_slices
+
+# Writing only the answers to a file
+with open('user_slices_answers.txt', 'w') as file:
+    for answer in answers:
+        file.write(f"{answer}\n")
+
+
+============================== modified.digital_twin_setup.py ==============================
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import sys
+import os
+import subprocess
+from comnetsemu.cli import CLI, spawnXtermDocker
+from comnetsemu.net import Containernet, VNFManager
+from mininet.link import TCLink
+from mininet.log import info, setLogLevel
+from mininet.node import Controller, RemoteController
+from python_modules.Open5GS import Open5GS
+import json, time, yaml
+
+def wait_for_uesimtun(ue, user_id, n_slices):
+    info(f"\n*** Waiting for the network to be ready for user {user_id}... it can take some seconds\n")
+    time.sleep(20)
+    output = ue.cmd('ifconfig')
+    while f"uesimtun{n_slices - 1}" not in output:
+        info("\n*** Still waiting...\n")
+        time.sleep(5)
+        output = ue.cmd('ifconfig')
+
+if __name__ == "__main__":
+
+    AUTOTEST_MODE = os.environ.get("COMNETSEMU_AUTOTEST_MODE", 0)
+
+    setLogLevel("info")
+
+    prj_folder = "/home/ubuntu/comnetsemu/app/Amarisoft.digital.twin"
+    mongodb_folder = "/home/ubuntu/mongodbdata"
+
+    env = dict()
+
+    net = Containernet(controller=Controller, link=TCLink)
+    mgr = VNFManager(net)
+    script_dir = os.path.abspath(os.path.join('./', os.path.dirname(sys.argv[0])))
+    shared_dir = os.path.join(script_dir, 'shared')
+    
+    # Initialize slices, users, and subnet data
+    slices = {}  # This will store the slices by their numeric index
+    n_slices = 0  # Counter for slice number
+    users_slices = {}  # This will store slices per user, indexed by user numeric ID
+    users_n_slices = {}  # This will store the number of slices per user
+
+    # Read the slice information from the JSON file
+    with open('slice_info_with_qci_and_ip.json', 'r') as file:
+        answers = json.load(file)
+
+    # Create a set to track unique slices (based on DNN, IP, Subnet)
+    unique_slices = {}
+
+    # Global variable for generating IP
+    global_ip = 112
+    seen_dnn = {}
+    subnet_ip_assignment = {}
+
+    # Assign a numeric user ID starting from 1
+    user_id_map = {}  # Mapping of user names to numeric user ids
+    user_id_counter = 1
+
+    # Iterate over the slice data to process users and their slices
+    for slice_info in answers:
+        slice_name = slice_info['slice_name']
+        ip_address = slice_info['ip_address']
+        users = slice_info['users']
+        bandwidth = slice_info['bandwidth']  # Remove unit for bandwidth (e.g., MHz)
+
+        # Process each user in the users list
+        for user_name in users:
+            # Map user names to numeric user ids if not already mapped
+            if user_name not in user_id_map:
+                user_id_map[user_name] = user_id_counter
+                user_id_counter += 1
+
+            user_id = user_id_map[user_name]
+
+            # If this is the first time we encounter this user, initialize their slice information
+            if user_id not in users_slices:
+                users_slices[user_id] = {}
+
+            # If this is the first time we encounter this user, initialize their slice count
+            if user_id not in users_n_slices:
+                users_n_slices[user_id] = 0
+
+            # Check if the slice has already been added to unique_slices
+            if slice_name not in seen_dnn:
+                # Assign IP and subnet from the JSON file
+                ip = '192.168.0.' + str(global_ip)  # IP is generated based on global_ip
+                subnet = ip_address  # Subnet is directly taken from the slice_info in JSON file
+                
+                # Add slice to unique_slices if it's not there already
+                unique_slices[slice_name] = {
+                    'dnn': slice_name,
+                    'bw': int(bandwidth.replace('MHz', '').strip()),  # Remove unit
+                    'ip': ip,
+                    'subnet': subnet
+                }
+
+                # Add the slice to the slices dictionary with a number key
+                slices[n_slices] = unique_slices[slice_name]
+
+                # Increment the global slice count and global_ip by 1 for each unique slice
+                n_slices += 1
+                global_ip += 1  # Increment IP by 1 for the next slice
+
+                # Mark this slice as seen
+                seen_dnn[slice_name] = True
+
+            # Add the slice for the user in the numbered format (sequential slice numbers for each user)
+            users_slices[user_id][users_n_slices[user_id]] = unique_slices[slice_name]
+            
+            # Increment the slice count for this user (the number of slices this user has)
+            users_n_slices[user_id] += 1
+
+    # Ensure that users_n_slices contains the total number of slices for each user
+    # Here, we print the result
+    print("Users n_slices (Number of slices per user):")
+    print(n_slices)
+    with open('./open5gs/config/smf.yaml', 'r') as read_file:
+        contents = yaml.safe_load(read_file)
+        contents['smf']['subnet'].clear()
+        contents['smf']['subnet'].extend([None] * int(n_slices))
+        contents['upf']['pfcp'].clear()
+        contents['upf']['pfcp'].extend([None] * int(n_slices))
+        for i in range(int(n_slices)):
+            contents['smf']['subnet'][i] = {
+                'addr': slices[i]['subnet'] + '/24',
+                'dnn': slices[i]['dnn']
+            }
+            contents['upf']['pfcp'][i] = {
+                'addr': slices[i]['ip'],
+                'dnn': slices[i]['dnn']
+            }
+    with open('./open5gs/config/smf.yaml', 'w') as dump_file:
+        yaml.dump(contents, dump_file)
+
+    with open('./open5gs/config/nssf.yaml', 'r') as read_file:
+        contents = yaml.safe_load(read_file)
+        contents['nssf']['nsi'].clear()
+        contents['nssf']['nsi'].extend([None] * int(n_slices))
+        for i in range(int(n_slices)):
+            contents['nssf']['nsi'][i] = {
+                'addr': '127.0.0.10',
+                'port': 7777,
+                's_nssai': {'sst': i + 1, 'sd': 1}
+            }
+    with open('./open5gs/config/nssf.yaml', 'w') as dump_file:
+        yaml.dump(contents, dump_file)
+
+    with open('./open5gs/config/amf.yaml', 'r') as read_file:
+        contents = yaml.safe_load(read_file)
+        contents['amf']['guami'][0]['plmn_id'] = {'mcc': '001', 'mnc': '01'}
+        contents['amf']['tai'][0]['plmn_id'] = {'mcc': '001', 'mnc': '01'}
+        contents['amf']['plmn_support'][0]['plmn_id'] = {'mcc': '001', 'mnc': '01'}
+        contents['amf']['plmn_support'][0]['s_nssai'].clear()
+        contents['amf']['plmn_support'][0]['s_nssai'].extend([None] * int(n_slices))
+        for i in range(int(n_slices)):
+            contents['amf']['plmn_support'][0]['s_nssai'][i] = {'sst': i + 1, 'sd': 1}
+    with open('./open5gs/config/amf.yaml', 'w') as dump_file:
+        yaml.dump(contents, dump_file)
+        
+    directory = "ueransim/config"
+    for user_id, user_slices in users_slices.items():
+        filename = f"open5gs-ue{user_id}.yaml"
+        
+        filepath = os.path.join(directory, filename)
+        with open('./ueransim/config/open5gs-ue.yaml', 'r') as read_file:
+            contents = yaml.safe_load(read_file)
+    
+        contents['supi'] = f"imsi-00101123456789{user_id}"
+        contents['sessions'] = []
+        contents['configured-nssai'] = []
+    
+        for i in range(users_n_slices[user_id]):
+            contents['sessions'].append({
+                'type': 'IPv4',
+                'slice': {'sst': i + 1, 'sd': 1},
+                'emergency': False
+            })
+        
+            contents['configured-nssai'].append({
+                'sst': i + 1,
+                'sd': 1
+            })
+    
+        with open(filepath, 'w') as dump_file:
+            yaml.dump(contents, dump_file)
+
+        print(f"Created {filename} for user {user_id}")
+      
+    with open('./ueransim/config/open5gs-gnb.yaml', 'r') as read_file:
+        contents = yaml.safe_load(read_file)
+        contents['slices'].clear()
+        contents['slices'].extend([None] * int(n_slices))
+        for i in range(int(n_slices)):
+            contents['slices'][i] = {'sst': i + 1, 'sd': 1}
+    with open('./ueransim/config/open5gs-gnb.yaml', 'w') as dump_file:
+        yaml.dump(contents, dump_file)
+
+    # create yaml config files for each upf
+    for i in range(int(n_slices)):
+        with open('./open5gs/config/default_yaml/upf.yaml', 'r') as read_file:
+            contents = yaml.safe_load(read_file)
+            contents['logger'] = {'file': '/open5gs/install/var/log/open5gs/upf_' + slices[i]['dnn'] + '.log'}
+            contents['upf'] = {
+                'pfcp': [{'addr': slices[i]['ip']}],
+                'gtpu': [{'addr': slices[i]['ip']}],
+                'subnet': [
+                    {'addr': slices[i]['subnet'] + '/24',
+                     'dnn': slices[i]['dnn'],
+                     'dev': 'ogstun'}
+                ]
+            }
+        with open('./open5gs/config/upf_' + slices[i]['dnn'] + '.yaml', 'w') as dump_file:
+            yaml.dump(contents, dump_file)
+
+    
+    info("*** Add controllers\n")    
+    c0 = net.addController("c0", controller=Controller, port=6634)
+    
+    info("*** Adding switch\n")
+    s1 = net.addSwitch("s1")
+    s2 = net.addSwitch("s2")
+    s3 = net.addSwitch("s3")
+   
+    
+    info("*** Adding links\n")
+    net.addLink(s1, s2, bw=1000, delay="10ms", intfName1="s1-s2", intfName2="s2-s1")
+    net.addLink(s2, s3, bw=1000, delay="50ms", intfName1="s2-s3", intfName2="s3-s2")
+
+    info("*** Adding Host for open5gs CP\n")
+    cp = net.addDockerHost(
+        "cp",
+        dimage="my5gc_v2-4-4-exporter",
+        ip="192.168.0.111/24",
+        dcmd="bash /open5gs/install/etc/open5gs/5gc_cp_init.sh",
+       
+        docker_args={
+            "ports": {"3000/tcp": 3000},
+            "volumes": {
+                prj_folder + "/log": {
+                    "bind": "/open5gs/install/var/log/open5gs",
+                    "mode": "rw",
+                },
+                mongodb_folder: {
+                    "bind": "/var/lib/mongodb",
+                    "mode": "rw",
+                },
+                prj_folder + "/open5gs/config": {
+                    "bind": "/open5gs/install/etc/open5gs",
+                    "mode": "rw",
+                },
+                "/etc/timezone": {
+                    "bind": "/etc/timezone",
+                    "mode": "ro",
+                },
+                "/etc/localtime": {
+                    "bind": "/etc/localtime",
+                    "mode": "ro",
+                },
+            },
+        },
+    )
+
+    for i in range(int(n_slices)):
+        info("*** Adding Host for open5gs UPF " + slices[i]['dnn'] + "\n")
+        env["COMPONENT_NAME"] = "upf_" + slices[i]['dnn']
+        env["SUBNET"] = slices[i]['subnet']
+        host_name = "upf_" + slices[i]['dnn'] 
+        host = net.addDockerHost(
+            "upf_" + slices[i]['dnn'],
+            dimage="my5gc_v2-4-4-exporter",
+            ip=slices[i]['ip'] + "/24",
+            dcmd="bash /open5gs/install/etc/open5gs/temp/5gc_up_init.sh",
+            docker_args={
+		"ports": {"9100/tcp": 9100 + i},
+                "environment": env,
+                "volumes": {
+                    prj_folder + "/log": {
+                        "bind": "/open5gs/install/var/log/open5gs",
+                        "mode": "rw",
+                    },
+                    prj_folder + "/open5gs/config": {
+                        "bind": "/open5gs/install/etc/open5gs/temp",
+                        "mode": "rw",
+                    },
+                    "/etc/timezone": {
+                        "bind": "/etc/timezone",
+                        "mode": "ro",
+                    },
+                    "/etc/localtime": {
+                        "bind": "/etc/localtime",
+                        "mode": "ro",
+                    },
+                },
+                "cap_add": ["NET_ADMIN"],
+                "sysctls": {"net.ipv4.ip_forward": 1},
+                "devices": "/dev/net/tun:/dev/net/tun:rwm"
+            },
+        )
+        net.addLink(host, s2, bw=1000, delay="1ms", intfName1="upf_" + slices[i]['dnn'] + "-s2",
+                    intfName2="s2-upf_" + slices[i]['dnn'])
+       
+
+    info("*** Adding gNB\n")
+    env["COMPONENT_NAME"] = "gnb"
+    gnb = net.addDockerHost(
+        "gnb",
+        dimage="myueransim_v3-2-6",
+        ip="192.168.0.131/24",
+        dcmd="bash /mnt/ueransim/open5gs_gnb_init.sh",
+        docker_args={
+            "environment": env,
+            "volumes": {
+                prj_folder + "/ueransim/config": {
+                    "bind": "/mnt/ueransim",
+                    "mode": "rw",
+                },
+                prj_folder + "/log": {
+                    "bind": "/mnt/log",
+                    "mode": "rw",
+                },
+                "/etc/timezone": {
+                    "bind": "/etc/timezone",
+                    "mode": "ro",
+                },
+                "/etc/localtime": {
+                    "bind": "/etc/localtime",
+                    "mode": "ro",
+                },
+                "/dev": {"bind": "/dev", "mode": "rw"},
+            },
+            "cap_add": ["NET_ADMIN"],
+            "devices": "/dev/net/tun:/dev/net/tun:rwm"
+        },
+    )
+
+    for user_id, user_slices in users_slices.items():
+        # Define the environment variables for each UE dynamically
+        env = {
+            "XDG_RUNTIME_DIR": "/tmp/runtime-dir",
+            "SDL_VIDEODRIVER": "dummy",
+            "SDL_RENDER_DRIVER": "software",
+            "SDL_AUDIODRIVER": "dsp",
+            "COMPONENT_NAME": f"ue{user_id}"  
+        }
+    
+        # Setup the IP address for the UE based on user_id
+        ue_ip = f"192.168.0.{132 + user_id}/24"           
+        dcmd = f"bash /mnt/ueransim/open5gs_ue{user_id}_init.sh"    
+        # Logging the addition of a new UE
+        info("*** Adding UE\n")               
+        ue = net.addDockerHost(
+            f"ue{user_id}",
+            dimage="myueransim_v3-2-6",
+            ip=ue_ip,
+            dcmd=dcmd,
+            docker_args={
+                "environment": env, 
+                "volumes": {
+                    prj_folder + "/ueransim/config": {
+                        "bind": "/mnt/ueransim",
+                        "mode": "rw",
+                    },
+                    prj_folder + "/log": {
+                        "bind": "/mnt/log",
+                        "mode": "rw",
+                    },
+                        "/etc/timezone": {
+                        "bind": "/etc/timezone",
+                        "mode": "ro",
+                    },
+                    "/etc/localtime": {
+                        "bind": "/etc/localtime",
+                        "mode": "ro",
+                    },
+                    "/dev": {"bind": "/dev", "mode": "rw"},
+                },
+                "cap_add": ["NET_ADMIN"],
+                "devices": "/dev/net/tun:/dev/net/tun:rwm"
+            },
+        )
+
+        # Establishing a network link with predefined parameters
+        net.addLink(ue, s1, bw=1000, delay="1ms", intfName1=f"ue{user_id}-s1", intfName2=f"s1-ue{user_id}")
+    net.addLink(cp, s3, bw=1000, delay="1ms", intfName1="cp-s1", intfName2="s1-cp")
+    net.addLink(gnb, s1, bw=1000, delay="1ms", intfName1="gnb-s1", intfName2="s1-gnb")
+    
+    o5gs = Open5GS("172.17.0.2", "27017")
+    o5gs.removeAllSubscribers()
+    
+    print(f"*** Open5GS: Init subscriber for UE 0")
+    folder_path = 'python_modules'
+
+
+
+    # Load slice information from the JSON file
+    with open('slice_info_with_qci_and_ip.json', 'r') as f:
+        slice_info = json.load(f)
+
+    # Create a dictionary for quick lookup of qci by slice name
+    slice_qci_dict = {}
+    for slice_data in slice_info:
+        slice_qci_dict[slice_data['slice_name']] = slice_data['qci']
+
+    # Load the default data for the subscriber profile template
+    with open(os.path.join(folder_path, 'subscriber_profile.json'), 'r') as file:
+        default_data = json.load(file)
+
+    # Generate profiles for each user
+    for user_id, user_slices in users_slices.items():
+        user_data = default_data.copy()
+        user_imsi = f"00101123456789{user_id}"
+        user_data['imsi'] = user_imsi
+        user_data['slice'] = []
+
+        # Iterate over each slice of the user
+        for i in range(users_n_slices[user_id]):
+            slice_name = user_slices[i]['dnn']  # Extract slice name (e.g., 'ims', 'sos', etc.)
+        
+            # Get the QCI from slice_qci_dict based on the slice name
+            qci = slice_qci_dict.get(slice_name, '9')  # Default to '9' if slice name not found
+        
+            # Set the default_indicator for the first slice or based on your logic
+            if i != 0:
+                default = None
+            else:
+                default = True
+        
+            # Append the slice data to the user's profile
+            user_data['slice'].append({
+                'sst': i + 1,
+                'default_indicator': default,
+                'sd': '000001',
+                'session': [{
+                    'name': slice_name,
+                    'type': 3,
+                    'pcc_rule': [],
+                    'ambr': {
+                        'Comment': 'unit=2 ==> Mbps',
+                        'uplink': {'value': int(user_slices[i]['bw']), 'unit': 2},
+                        'downlink': {'value': int(user_slices[i]['bw']), 'unit': 2}
+                    },
+                    'qos': {
+                        'index': int(qci),  # Use the qci value retrieved from slice_qci_dict
+                        'arp': {
+                            'priority_level': 15,
+                            'pre_emption_capability': 1,
+                            'pre_emption_vulnerability': 1
+                        }
+                    }
+                }]
+            })
+
+        # Write the user's profile to a JSON file
+        json_filename = f'subscriber_profile{user_id}.json'
+        with open(os.path.join(folder_path, json_filename), 'w') as file:
+            json.dump(user_data, file)
+
+        print(f"Created {json_filename} for user {user_id}")
+
+         
+    folder_path = 'python_modules'
+    for user_id, user_slices in users_slices.items():
+        json_filename = f'subscriber_profile{user_id}.json'
+        with open(os.path.join(folder_path, json_filename), 'r') as f:
+            profile = json.load(f)
+
+        o5gs = Open5GS("172.17.0.2", "27017")
+        o5gs.addSubscriber(profile)
+      
+        print(f"Added subscriber profile from {json_filename} for user {user_id} to Open5GS")
+        
+        
+    info("\n*** Starting network\n")
+    net.start()
+ 
+    if not AUTOTEST_MODE:
+        for user_id, user_slices in users_slices.items():
+            ue_container_name = f"ue{user_id}"
+            ue = net.get(ue_container_name)
+            wait_for_uesimtun(ue, user_id, users_n_slices[user_id])
+        ue2 = net.get("ue2")        
+        ue2.cmd('ifconfig uesimtun0 192.168.2.6 netmask 255.255.255.0')  
+        ue2.cmd('ifconfig uesimtun1 192.168.4.6 netmask 255.255.255.0')  
+           
+        
+                    
+
+        CLI(net)
+    net.stop()     
+     
+
+============================== twin_data_collector.py ==============================
+import paramiko
+import os
+import re
+import ipaddress
+import json
+
+# Define the remote host and credentials
+remote_host = "10.196.30.239"
+username = "root"
+password = os.getenv("SCP_PASSWORD", "5gbasestation+!")
+remote_path = "/root/mme/config/mme.cfg"  # Path to the configuration file on the remote host
+local_output_filename = "slice_info_with_qci_and_ip.json"  # Local output file
+
+# Users information (added)
+users = ["user1", "user2"]
+bandwidth = "100MHz"  # Bandwidth for each slice
+
+# Function to convert an IP address (in string format) to an integer
+def ip_to_int(ip_str):
+    return int(ipaddress.IPv4Address(ip_str))
+
+# Function to convert an integer back to an IP address string
+def int_to_ip(ip_int):
+    return str(ipaddress.IPv4Address(ip_int))
+
+# Function to extract slice names, qci values, and the modified IP addresses
+def extract_slice_info(config_data):
+    # Regular expressions to find access_point_name, first_ip_addr, and qci
+    slice_pattern = r'access_point_name:\s*"([^"]+)"'
+    ip_pattern = r'first_ip_addr:\s*"([^"]+)"'
+    qci_pattern = r'qci:\s*(\d+)'
+
+    slice_info = []
+
+    # Extract all access point names (slice names)
+    access_point_names = re.findall(slice_pattern, config_data)
+
+    # For each access point, extract its corresponding qci values and first_ip_addr
+    for access_point_name in access_point_names:
+        # Find the section related to each access point, containing qci and first_ip_addr
+        slice_section = re.search(rf'access_point_name:\s*"{access_point_name}"(.*?erabs.*?)(?=\n\s*access_point_name|$)', config_data, re.DOTALL)
+
+        if slice_section:
+            # Extract the first_ip_addr
+            ip_match = re.search(rf'first_ip_addr:\s*"([^"]+)"', slice_section.group(0))
+            if ip_match:
+                first_ip_addr = ip_match.group(1)
+                # Convert the IP address to an integer and subtract 1
+                ip_int = ip_to_int(first_ip_addr) - 1
+                modified_ip = int_to_ip(ip_int)
+            else:
+                modified_ip = "N/A"  # In case the IP address is missing
+
+            # Extract the qci values for the current access point
+            qci_values = re.findall(qci_pattern, slice_section.group(0))
+
+            # For each qci value found, append it to the slice_info list along with modified IP
+            for qci in qci_values:
+                slice_info.append({
+                    'slice_name': access_point_name,
+                    'qci': qci,
+                    'ip_address': modified_ip,
+                    'users': users,  # List of users
+                    'bandwidth': bandwidth  # Bandwidth for each slice
+                })
+
+    return slice_info
+
+# Function to write extracted information to a file locally (in JSON format)
+def write_to_file(slice_info, output_filename):
+    with open(output_filename, 'w') as file:
+        json.dump(slice_info, file, indent=4)  # Save as pretty-printed JSON
+    print(f"Information has been written to {output_filename}")
+
+# SSH and SFTP operations
+def fetch_and_process_remote_file():
+    try:
+        # Create an SSH client
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+        # Connect to the remote host
+        ssh.connect(remote_host, username=username, password=password)
+        print(f"Connected to {remote_host}")
+
+        # Use SFTP to fetch the remote file
+        sftp = ssh.open_sftp()
+        remote_file = sftp.open(remote_path, 'r')
+        config_data = remote_file.read().decode('utf-8')
+        remote_file.close()
+
+        # Process the configuration file
+        slice_info = extract_slice_info(config_data)
+
+        if slice_info:
+            # Write the extracted information to a local file (in JSON format)
+            write_to_file(slice_info, local_output_filename)
+        else:
+            print("No slice information or QCI values found.")
+
+        # Optionally, you can also transfer the output file back to the remote server if needed
+        # sftp.put(local_output_filename, '/remote/path/to/save/output_file.json')
+
+        # Close the SFTP session and SSH connection
+        sftp.close()
+        ssh.close()
+
+    except Exception as e:
+        print(f"Error: {e}")
+
+# Main function to initiate the process
+if __name__ == '__main__':
+    fetch_and_process_remote_file()
+
+
+============================== test.pcap_replay_twin.py ==============================
+import pexpect
+import sys
+import os
+import stat
+import time
+import datetime
+import logging
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
+
+# Configure logging
+logging.basicConfig(filename='file_transfer.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Remote and local details
+remote_dir = "/root/Desktop/traffic/iteration/"
+remote_host = "10.196.30.239"
+username = "root"
+password = os.getenv("SCP_PASSWORD", "5gbasestation+!")
+file_patterns = ["upf_default", "upf_internet", "upf_sos", "upf_ims"]  # Base file names
+
+# Determine the current working directory
+local_dir = os.getcwd()
+
+# Function to build numbered file names based on iteration count
+def build_file_names(counter):
+    return {f"{file_pattern}{counter}.pcap": f"{file_pattern}:/open5gs/{file_pattern}{counter}.pcap" for file_pattern in file_patterns}
+
+# Function to build tcpreplay commands dynamically
+def build_tcpreplay_commands(counter):
+    return {f"{file_pattern}{counter}.pcap": f"tcpreplay -i ogstun /open5gs/{file_pattern}{counter}.pcap" for file_pattern in file_patterns}
+
+# Function to transfer a single file
+def transfer_file(remote_file, local_file, filename):
+    # Define the local directory and ensure the target folder exists
+    current_dir = os.getcwd()
+    target_dir = os.path.join(current_dir, 'physicaltwin.traffic')
+    if not os.path.exists(target_dir):
+        os.makedirs(target_dir)
+    
+    # Define the local file path
+    local_file = os.path.join(target_dir, filename)
+    
+    # Construct SCP command to transfer file from remote to local
+    scp_command = f"scp {username}@{remote_host}:{remote_file} {local_file}"
+
+    try:
+        # Use pexpect to spawn the SCP command and interact with the process
+        child = pexpect.spawn(scp_command, encoding='utf-8')
+        i = child.expect(['Are you sure you want to continue connecting', 'password:', pexpect.EOF, pexpect.TIMEOUT])
+
+        # Handle the expected prompts and responses from SCP
+        if i == 0:
+            child.sendline('yes')
+            child.expect('password:')
+            child.sendline(password)
+        elif i == 1:
+            child.sendline(password)
+        elif i == 2:
+            logging.error("Connection closed unexpectedly.")
+            sys.exit(1)
+        elif i == 3:
+            logging.error("Timeout occurred.")
+            sys.exit(1)
+
+        child.expect(pexpect.EOF)
+        logging.info(f"File transferred successfully to {local_file}!")
+        os.chmod(local_file, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+
+        # Optionally, copy the file to Docker containers if applicable
+        docker_copy_file(local_file)
+
+    except pexpect.exceptions.EOF:
+        logging.error("SCP process exited unexpectedly.")
+    except pexpect.exceptions.TIMEOUT:
+        logging.error("Timeout occurred while waiting for SCP response.")
+    except Exception as e:
+        logging.error(f"Error occurred: {str(e)}")
+
+# Function to copy the transferred file into Docker containers for processing
+def docker_copy_file(local_file):
+    container_target = containers.get(os.path.basename(local_file))
+    if container_target:
+        container, target_path = container_target.split(':')
+        docker_command = f"docker cp {local_file} {container}:{target_path}"
+        try:
+            result = subprocess.run(docker_command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            logging.info(f"File {local_file} copied to Docker container {container} at {target_path}.")
+            # Analyze the file inside the container using tcpreplay
+            analyze_in_container(container, target_path)
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Error copying file to Docker container: {e.stderr.decode()}")
+
+# Function to analyze .pcap files inside Docker containers using tcpreplay
+def analyze_in_container(container, file_path):
+    analyze_command = tcpreplay_commands.get(os.path.basename(file_path))
+    if analyze_command:
+        docker_exec_command = f"docker exec {container} {analyze_command}"
+        try:
+            result = subprocess.run(docker_exec_command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            logging.info(f"tcpreplay output for {file_path} in container {container}:\n{result.stdout.decode()}")
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Error during tcpreplay execution: {e.stderr.decode()}")
+
+# Function to delete local .pcap files
+def delete_local_files(counter):
+    try:
+        for file_pattern in file_patterns:
+            file_path = os.path.join(local_dir, f"{file_pattern}{counter}.pcap")
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                logging.info(f"Local file {file_path} removed.")
+            else:
+                logging.info(f"Local file {file_path} does not exist, no need to delete.")
+    except Exception as e:
+        logging.error(f"Error removing local file: {str(e)}")
+
+# Function to delete .pcap files from Docker containers
+def delete_docker_files(counter):
+    try:
+        for file_pattern in file_patterns:
+            file_name = f"{file_pattern}{counter}.pcap"
+            container_target = containers.get(file_name)
+            if container_target:
+                container, target_path = container_target.split(':')
+                docker_rm_command = f"docker exec {container} rm {target_path}"
+                try:
+                    result = subprocess.run(docker_rm_command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    logging.info(f"File {target_path} removed from Docker container {container}.")
+                except subprocess.CalledProcessError as e:
+                    logging.error(f"Error removing file from Docker container: {e.stderr.decode()}")
+    except Exception as e:
+        logging.error(f"Error removing Docker file: {str(e)}")
+
+# Function to transfer files concurrently using ThreadPoolExecutor
+def transfer_files_concurrently(counter):
+    with ThreadPoolExecutor() as executor:
+        futures = []
+        current_files = build_file_names(counter)
+        for file, container_path in current_files.items():
+            remote_file_path = f"{remote_dir}{file}"
+            local_file_path = os.path.join(local_dir, file)
+            futures.append(executor.submit(transfer_file, remote_file_path, local_file_path, file))  # Pass 'file' as the filename
+        for future in futures:
+            future.result()
+
+# Main function to handle file transfers periodically
+def transfer_files_periodically():
+    try:
+        counter = 1  # Start the cycle at 1 for the numbered files
+        next_cycle = datetime.datetime.now()  # Schedule the first cycle for immediate start
+
+        while True:
+            now = datetime.datetime.now()
+            if now >= next_cycle:
+                logging.info(f"Starting cycle {counter}")
+
+                # Cleanup old files before transferring new ones
+                delete_local_files(counter)
+                delete_docker_files(counter)
+
+                # Set up containers and tcpreplay commands for the current iteration
+                global containers, tcpreplay_commands
+                containers = build_file_names(counter)
+                tcpreplay_commands = build_tcpreplay_commands(counter)
+
+                # Transfer the new files and process them
+                transfer_files_concurrently(counter)
+                logging.info(f"Cycle {counter} completed successfully.")
+
+                # Increment the cycle counter and schedule the next cycle (2 minutes later)
+                counter += 1
+                next_cycle = now + datetime.timedelta(minutes=2)
+
+            # Short sleep to prevent CPU overuse
+            time.sleep(1)
+
+    except KeyboardInterrupt:
+        logging.info("File transfer interrupted by user.")
+        sys.exit(0)
+
+# Main entry point
+if __name__ == "__main__":
+    transfer_files_periodically()
+
+
+============================== test.5G.Net.test.py ==============================
+from pyfiglet import Figlet
+import subprocess
+import time
+from threading import Thread
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def main():
+    f = Figlet(font='slant')
+    print(f.renderText('5G Network Test'))
+
+def capture_traffic(container_name, iteration, duration=120, cleanup=False):
+    pcap_file_path = f"/open5gs/{container_name}d{iteration}.pcap"  # File name with iteration
+    try:
+        # Start traffic capture
+        logging.info(f"Starting traffic capture on container {container_name}, interface ogstun, iteration {iteration}")
+        capture_command = f"docker exec -d {container_name} tcpdump -i ogstun -w {pcap_file_path}"
+        subprocess.run(capture_command, shell=True, check=True)
+
+        # Check if tcpdump is running
+        check_command = f"docker exec {container_name} pgrep tcpdump"
+        if subprocess.run(check_command, shell=True).returncode == 0:
+            logging.info(f"TCPDump is running on container {container_name}.")
+        else:
+            logging.error(f"TCPDump failed to start on container {container_name}.")
+            return  # Exit if tcpdump did not start
+
+        logging.info(f"Waiting for {duration} seconds for traffic capture on container {container_name}...")
+        time.sleep(duration)
+
+        # Stop traffic capture
+        stop_command = f"docker exec {container_name} pkill tcpdump"
+        subprocess.run(stop_command, shell=True, check=True)
+        logging.info(f"Traffic capture stopped for container '{container_name}' on iteration {iteration}")
+
+        # Download the capture file
+        local_file_path = f"./digitaltwin.traffic/{container_name}d{iteration}.pcap"  # Download with the same iteration name
+        download_file(container_name, pcap_file_path, local_file_path)
+
+        # Optionally remove the capture file from the container after downloading
+        if cleanup:
+            cleanup_command = f"docker exec {container_name} rm {pcap_file_path}"
+            subprocess.run(cleanup_command, shell=True, check=True)
+            logging.info(f"Removed pcap file {pcap_file_path} from container {container_name}")
+
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error capturing traffic for container '{container_name}' on iteration {iteration}: {e}")
+    except Exception as e:
+        logging.error(f"Unexpected error: {e}")
+
+def download_file(container_name, container_file_path, local_file_path):
+    try:
+        download_command = f"docker cp {container_name}:{container_file_path} {local_file_path}"
+        subprocess.run(download_command, shell=True, check=True)
+        logging.info(f"File {container_file_path} from container {container_name} downloaded to {local_file_path}")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error downloading file from container '{container_name}': {e}")
+
+def main_capture():
+    containers = ['upf_sos', 'upf_ims', 'upf_internet', 'upf_default']
+    iterations = 10  # Number of iterations
+    duration = 120  # Duration of each capture
+
+    for i in range(1, iterations + 1):  # Loop for 10 iterations
+        threads = []
+        for container in containers:
+            thread = Thread(target=capture_traffic, args=(container, i, duration))
+            thread.start()
+            threads.append(thread)
+
+        # Wait for all threads to complete
+        for thread in threads:
+            thread.join()
+
+        # Add a pause between iterations
+        if i < iterations:
+            logging.info(f"Waiting {duration} seconds before starting iteration {i + 1}...")
+            time.sleep(1)  # Short delay between iterations (you can increase this if needed)
+
+if __name__ == "__main__":
+    main()
+    main_capture()
+
+
+============================== resourcetest.py ==============================
+import psutil
+import time
+import csv
+
+# Function to monitor CPU, Memory, and Disk usage and save to CSV file
+def monitor_resources():
+    # Open the CSV file in append mode
+    with open("resource_usage.csv", mode="a", newline="") as file:
+        writer = csv.writer(file)
+
+        # Write header if the file is empty
+        if file.tell() == 0:
+            writer.writerow(["Time", "CPU (%)", "Memory (%)", "Disk Usage (%)"])
+
+        # Monitor the resources
+        while True:
+            # Get current time
+            current_time = time.strftime("%H:%M:%S")
+
+            # Get CPU usage percentage
+            cpu_usage = psutil.cpu_percent(interval=1)
+
+            # Get Memory usage percentage
+            memory = psutil.virtual_memory()
+            memory_usage = memory.percent
+
+            # Get Disk usage percentage
+            disk = psutil.disk_usage('/')
+            disk_usage = disk.percent
+
+            # Write the resource usage data to the CSV file
+            writer.writerow([current_time, cpu_usage, memory_usage, disk_usage])
+            file.flush()  # Ensure immediate write to file
+
+            # Pause for 1 second before taking the next reading
+            time.sleep(1)
+
+if __name__ == "__main__":
+    try:
+        monitor_resources()
+    except KeyboardInterrupt:
+        print("\nMonitoring stopped.")
+
+
+============================== runDigitaltwin.sh ==============================
+#!/bin/bash
+
+# Run all three Python scripts simultaneously in the background
+python3 test.pcap_replay_twin.py &    # Run the first script in the background
+python3 test.5G.Net.test.py &         # Run the second script in the background
+python3 resourcetest.py &             # Run the third script in the background
+
+# Wait for all background jobs to finish
+wait
+
+

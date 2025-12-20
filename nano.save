@@ -1,0 +1,24 @@
+# master_pipeline.sh
+# Automates Amarisoft → VM Digital Twin → Prometheus/Grafana pipeline
+
+AMARISOFT_IP=10.196.31.99
+VM_PATH=/home/ubuntu/comnetsemu/app/Amarisoft.digital.twin/physicaltwin.traffic
+VM_HOST=ubuntu@192.168.64.8   # adjust to your Multipass IP
+
+echo "[1/6] Starting traffic capture on Amarisoft..."
+ssh root@$AMARISOFT_IP "python3 /root/regenerationtaffic.py"
+
+echo "[2/6] Transferring pcap files to VM..."
+scp root@$AMARISOFT_IP:/root/Desktop/traffic/iteration/*.pcap $VM_HOST:$VM_PATH/
+
+echo "[3/6] Replaying traffic in Digital Twin..."
+ssh $VM_HOST "cd ~/comnetsemu/app/Amarisoft.digital.twin && python3 test.pcap_replay_twin.py &"
+
+echo "[4/6] Collecting slice info..."
+ssh $VM_HOST "cd ~/comnetsemu/app/Amarisoft.digital.twin && python3 twin_data_collector.py"
+
+echo "[5/6] Starting node_exporter in UPF containers..."
+ssh $VM_HOST "cd ~/comnetsemu/app/Amarisoft.digital.twin && ./nodestart.sh"
+
+echo "[6/6] Prometheus + Grafana dashboards ready (check localhost:3000)"
+

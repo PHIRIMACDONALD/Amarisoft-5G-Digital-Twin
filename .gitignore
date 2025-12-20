@@ -1,0 +1,15 @@
+# Large capture files
+*.pcap
+*.pcapng
+
+# Prometheus binaries (too large for GitHub)
+monitoring/prometheus/prometheus
+monitoring/prometheus/promtool
+
+# Common generated data
+logs/
+results/
+data/
+__pycache__/
+*.log
+

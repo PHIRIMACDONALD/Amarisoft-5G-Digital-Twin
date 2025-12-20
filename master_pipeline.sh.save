@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+AMARISOFT_USER="root"
+AMARISOFT_IP="10.196.30.239"
+AMARISOFT_PASSWORD='5gbasestation+!'
+
+DIGITALTWIN_DIR="/home/ubuntu/comnetsemu/app/Amarisoft.digital.twin"
+PCAP_DEST="${DIGITALTWIN_DIR}/physicaltwin.traffic"
+SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+
+echo "=== master_pipeline starting ==="
+
+mkdir -p "${PCAP_DEST}"
+
+echo "[1/5] Copy PCAP files from Amarisoft → VM..."
+sshpass -p "${AMARISOFT_PASSWORD}" scp ${SSH_OPTS} ${AMARISOFT_USER}@${AMARISOFT_IP}:/root/Desktop/traffic/iteration/*.pcap "${PCAP_DEST}/" || true
+
+echo "[2/5] Start replay inside digital twin..."
+cd "${DIGITALTWIN_DIR}"
+nohup python3 test.pcap_replay_twin.py > replay.log 2>&1 &
+echo "Replay started (log: replay.log)"
+
+echo "[3/5] Start resource monitor..."
+nohup python3 resourcetest.py > resource_monitor.log 2>&1 &
+echo "Resource monitor started (log: resource_monitor.log)"
+
+echo "[4/5] Collect slice info..."
+python3 twin_data_collector.py || true
+echo "Slice info written (slice_info_with_qci_and_ip.json)"
+
+echo "=== master_pipeline done ==="
