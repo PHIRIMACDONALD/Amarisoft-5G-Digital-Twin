@@ -8,7 +8,7 @@ echo "================================================="
 
 # --- New Step: Check and Clear Required Ports ---
 echo "🔎 Checking and clearing network ports..."
-PORTS_TO_CLEAR="80 8000 9090"
+PORTS_TO_CLEAR="80 3000 8000 9090"
 
 for PORT in $PORTS_TO_CLEAR; do
     # The '-t' flag gives us only the PID, which is perfect for scripting.
@@ -67,6 +67,9 @@ sudo bash install_tcpreplay_in_upfs.sh
 echo "✅ TCPreplay installation complete."
 echo "-------------------------------------------------"
 
+sudo pkill -f "prometheus --config.file=prometheus.yml" 2>/dev/null || true
+sleep 1
+
 # --- Step 4: Start Prometheus (FIXED PATH) ---
 echo "[4/9] Starting Prometheus monitoring server..."
 # Corrected path from 'Prometheus' to 'prometheus'
@@ -81,8 +84,19 @@ echo "-------------------------------------------------"
 
 # --- Step 5: Start Grafana ---
 echo "[5/9] Starting Grafana container..."
-sudo docker run -d -p 8000:3000 grafana/grafana > /dev/null
-echo "✅ Grafana and Prometheus ready"
+# --- Step 5: Start Grafana (provisioned) ---
+echo "[5/9] Starting Grafana container (with provisioning)..."
+sudo docker rm -f grafana_automation >/dev/null 2>&1 || true
+
+sudo docker run -d \
+  --name grafana_automation \
+  -p 8000:3000 \
+  --add-host=host.docker.internal:host-gateway \
+  -v "$PWD/dashboard_automation/provisioning/datasources:/etc/grafana/provisioning/datasources" \
+  -v "$PWD/dashboard_automation/provisioning/dashboards:/etc/grafana/provisioning/dashboards" \
+  grafana/grafana >/dev/null
+
+echo "✅ Grafana provisioned (datasource name: Prometheus, dashboard loaded automatically)."
 echo "-------------------------------------------------"
 
 # --- Step 6: Run Combined Scraper ---

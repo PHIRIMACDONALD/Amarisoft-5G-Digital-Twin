@@ -2,6 +2,10 @@ global:
   scrape_interval: 5s
 
 scrape_configs:
-  - job_name: 'amarisoft'
+  - job_name: prometheus
     static_configs:
-      - targets: ['localhost:80']
+      - targets: ["localhost:9090"]
+
+  - job_name: amarisoft_and_upf_metrics
+    static_configs:
+      - targets: ["localhost:80"]

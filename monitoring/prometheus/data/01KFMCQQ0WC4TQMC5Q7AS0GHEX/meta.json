@@ -1,0 +1,17 @@
+{
+	"ulid": "01KFMCQQ0WC4TQMC5Q7AS0GHEX",
+	"minTime": 1769126400598,
+	"maxTime": 1769133600000,
+	"stats": {
+		"numSamples": 1166400,
+		"numSeries": 810,
+		"numChunks": 9724
+	},
+	"compaction": {
+		"level": 1,
+		"sources": [
+			"01KFMCQQ0WC4TQMC5Q7AS0GHEX"
+		]
+	},
+	"version": 1
+}

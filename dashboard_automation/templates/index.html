@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Amarisoft Digital Twin Controller</title>
+  <style>
+    :root{
+      --bg1:#f5f7fb; --bg2:#eef2f7;
+      --card:#ffffff; --shadow:0 18px 50px rgba(0,0,0,.12);
+      --green:#18a05b; --red:#d63b3b; --blue:#1463ff;
+      --text:#0f172a; --muted:#64748b;
+      --console:#070b10; --console2:#0b1220; --consoleText:#22c55e;
+      --border:#e5e7eb;
+      --radius:18px;
+    }
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      color:var(--text);
+      background: radial-gradient(1200px 600px at 30% 0%, var(--bg2), var(--bg1));
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:28px;
+    }
+    .wrap{
+      width:min(980px, 96vw);
+    }
+    .card{
+      background:var(--card);
+      border:1px solid var(--border);
+      box-shadow:var(--shadow);
+      border-radius:var(--radius);
+      padding:28px;
+    }
+    .title{
+      text-align:center;
+      font-size:34px;
+      margin:0 0 18px;
+      font-weight:800;
+      letter-spacing:.2px;
+    }
+    .row{
+      display:flex;
+      gap:14px;
+      justify-content:center;
+      margin: 10px 0 18px;
+      flex-wrap:wrap;
+    }
+    button{
+      border:0;
+      border-radius:14px;
+      padding:14px 22px;
+      font-weight:800;
+      cursor:pointer;
+      font-size:16px;
+      min-width:220px;
+      transition:transform .05s ease, filter .15s ease, opacity .15s ease;
+      color:white;
+    }
+    button:active{ transform: translateY(1px); }
+    button:disabled{ opacity:.55; cursor:not-allowed; }
+    .btn-run{ background: linear-gradient(180deg, #1dbf6e, var(--green)); }
+    .btn-stop{ background: linear-gradient(180deg, #ea4f4f, var(--red)); }
+    .btn-dash{ background: linear-gradient(180deg, #2b76ff, var(--blue)); width:100%; }
+    .toolbar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:14px;
+      margin: 10px 0 10px;
+      flex-wrap:wrap;
+    }
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap:10px;
+      padding:8px 12px;
+      border:1px solid var(--border);
+      border-radius:999px;
+      background:#fff;
+      font-weight:700;
+      font-size:13px;
+      color:var(--muted);
+    }
+    .dot{
+      width:10px;height:10px;border-radius:50%;
+      background:#94a3b8;
+    }
+    .dot.ok{ background:#22c55e; }
+    .dot.bad{ background:#ef4444; }
+    .search{
+      display:flex; gap:10px; align-items:center;
+      width:min(520px, 100%);
+      flex:1;
+      justify-content:flex-end;
+    }
+    input[type="text"]{
+      width:100%;
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:10px 12px;
+      font-size:14px;
+      outline:none;
+    }
+    .toggle{
+      display:flex; gap:8px; align-items:center;
+      font-size:13px; color:var(--muted); font-weight:700;
+      white-space:nowrap;
+    }
+    .console-wrap{
+      background: linear-gradient(180deg, var(--console), var(--console2));
+      border-radius: 16px;
+      border:1px solid rgba(255,255,255,.08);
+      padding:14px;
+    }
+    .console-head{
+      text-align:center;
+      color:#cbd5e1;
+      font-weight:800;
+      margin:0 0 10px;
+      letter-spacing:.4px;
+    }
+    pre{
+      margin:0;
+      height: 360px;
+      overflow:auto;
+      padding:14px;
+      border-radius: 12px;
+      background: rgba(0,0,0,.35);
+      color: var(--consoleText);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
+      font-size: 13px;
+      line-height: 1.25rem;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+    }
+    .footer{
+      margin-top:14px;
+    }
+    .toast{
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 18px;
+      background: rgba(15,23,42,.92);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 13px;
+      display:none;
+      max-width: min(880px, 92vw);
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1 class="title">Amarisoft Digital Twin Controller</h1>
+
+      <div class="row">
+        <button id="btnRun" class="btn-run">🚀 Run Twin</button>
+        <button id="btnStop" class="btn-stop">🧹 Stop/Clean</button>
+      </div>
+
+      <div class="toolbar">
+        <div class="pill" title="Backend state">
+          <span id="stateDot" class="dot"></span>
+          <span id="stateText">Idle</span>
+        </div>
+
+        <div class="pill" title="Grafana health from backend">
+          <span id="grafanaDot" class="dot"></span>
+          <span id="grafanaText">Grafana: unknown</span>
+        </div>
+
+        <div class="search">
+          <div class="toggle">
+            <input id="autoScroll" type="checkbox" checked />
+            <label for="autoScroll">Auto-scroll</label>
+          </div>
+          <input id="logFilter" type="text" placeholder="Filter logs (substring)..." />
+        </div>
+      </div>
+
+      <div class="console-wrap">
+        <div class="console-head">Live Logs</div>
+        <pre id="logBox"></pre>
+      </div>
+
+      <div class="footer">
+        <button id="btnDash" class="btn-dash">Dashboard Ready: Open Grafana</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
