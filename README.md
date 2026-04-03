@@ -1,100 +1,36 @@
-# Amarisoft digital twin 
-Based on the already existing [5G network emulator](https://github.com/fabrizio-granelli/comnetsemu_5Gnet), with an added new functionality:
-**Implementation of a command line interaction for automatic user creation.** 
+# Automated Amarisoft 5G Digital Twin
 
-## Prerequisites
+**Author:** Macdonald PHIRI
+**Supervisor:** Prof. Fabrizio Granelli - DISI, University of Trento
+**Project:** Progettazione e sviluppo di Network Digital Twin
+**Funding:** PNRR SPRINT - CUP E83C22004640001
+**Platform:** MacBook Air M4, macOS Tahoe 26.2 - Multipass Ubuntu 20.04
 
-Tested Versions:
-- Comnetsemu: v0.3.0 (Installed following either "Option 1" or "Option 3" from [here](https://git.comnets.net/public-repo/comnetsemu) )
-- UERANSIM: v3.2.6
-- Open5gs: v2.4.2
+## Quick Start
 
-Necessary Python packages:
-- pymongo
-- json
-- pyyaml
+git clone https://github.com/PHIRIMACDONALD/Amarisoft-5G-Digital-Twin
+cd Amarisoft-5G-Digital-Twin
+bash ./run_experiment1.sh
 
-## Build Instructions
+## What This Does
 
-1. Clone repository in the comnetsemu VM, into ~/comnetsemu/app folder.
-```
-cd ~/comnetsemu/app 
-git clone https://github.com/TatendaHZ/5G-Digital-twin.git
-```
-**Note:** make sure variables **prj_folder** and **mongodb_folder** (lines 22 and 23 of the example script) are correct. They may change depending on your installation method or original repository.
+Fully automated 5G Digital Twin built on ComNetsEmu.
+One command starts everything in 8-12 minutes:
+- Open5GS 5G Core (AMF, SMF, UPF, NRF)
+- UERANSIM RAN (gNB + UE)
+- Network Slicing (eMBB, URLLC, mMTC)
+- Amarisoft Digital Twin integration
+- PCAP traffic capture and replay
+- Prometheus + Grafana monitoring
+- Flask web controller at port 5000
 
-2. Download the necessary docker images:
+## Access
 
-```
-cd build
-./dockerhub_pull.sh
-```
+Grafana:    http://VM_IP:3000  (admin/admin)
+Prometheus: http://VM_IP:9090
+Controller: http://VM_IP:5000
 
+## Contact
 
-## Run automatic slice creation simulator
-
-### Our topology
-The topology is very similar to the one in the original repository. Basically each of the elements in our network runs in a separate Docker host.
-
-This means that we will have 3 basic hosts (UE, gNB and CP), plus one additional host per slice (UPF).
-A PDU session will be initiated for each slice.
-The current configuration links all UPF docker hosts to the second switch (S2). 
-
-<img src="./images/digit.drawio.png" title="./images/digit.drawio.png" width=1000px></img>
-
-
-Build the server docker image:
-
-```
-cd Anari/build
-./build.sh
-```
-## Run the data acquisition code
-
-```
-sudo python3 twin_data_collector.py
-```
-
-## Run the physical twin
-
-```
-./runPhysicaltwin.sh
-```
-
-## Run the network topology
-
-```
-sudo python3 modified.digital_twin_setup.py
-```
-
-## Run digital twin
-
-```
-./runDigitaltwin.sh
-
-```
-
-## Traffic capture and  tests
-
-
-```
-sudo python3 test.5G.Net.test.py
-```
-
-
-
-### Contact
-
-Amarisoft digital-twin creation: 
-- Tatenda Horiro Zhou - tatendazho@gmail.com
-
-Supervised by: 
-- Fabrizio Granelli - fabrizio.granelli@unitn.it
-
-
-
-
-
-
-
-# 5G-Digital-twin
+Macdonald PHIRI - phiriygt1@gmail.com
+Supervised by Prof. Fabrizio Granelli - fabrizio.granelli@unitn.it
