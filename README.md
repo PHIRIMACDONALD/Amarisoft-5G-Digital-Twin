@@ -1,19 +1,20 @@
-# Amarisoft Digital Twin Automation with Observability
+# Amarisoft Digital Twin — Automation & Observability
+## A Complete Build Report & Technical Reference
 
-> **A research-grade 5G network digital twin platform combining Comnetsemu/Containernet, Open5GS, UERANSIM, real traffic replay, and a full Prometheus/Grafana observability stack — orchestrated end-to-end by a single-command automation pipeline.**
+> **How I built a fully automated 5G digital twin on a Multipass VM — from a bare Ubuntu install to a one-click Grafana dashboard — step by step, from first principles.**
 
 ---
 
 <div align="center">
 
-![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Ubuntu%2022.04-blue)
-![Python](https://img.shields.io/badge/Python-3.10%2B-green)
-![Docker](https://img.shields.io/badge/Docker-24.x-blue)
+![Platform](https://img.shields.io/badge/Platform-Ubuntu%2020.04%20Multipass-blue)
+![Python](https://img.shields.io/badge/Python-3.8%2B-green)
+![Docker](https://img.shields.io/badge/Docker-Engine-blue)
 ![Open5GS](https://img.shields.io/badge/Core-Open5GS-orange)
 ![UERANSIM](https://img.shields.io/badge/RAN-UERANSIM-purple)
 ![Prometheus](https://img.shields.io/badge/Monitoring-Prometheus-red)
-![Grafana](https://img.shields.io/badge/Visualization-Grafana-yellow)
-![License](https://img.shields.io/badge/License-MIT-lightgrey)
+![Grafana](https://img.shields.io/badge/Viz-Grafana%20%3A8000-yellow)
+![Status](https://img.shields.io/badge/Backend-Automated-brightgreen)
 
 </div>
 
@@ -21,1430 +22,1029 @@
 
 ## Table of Contents
 
-1. [Project Overview](#1-project-overview)
-2. [System Architecture](#2-system-architecture)
-3. [Component Descriptions](#3-component-descriptions)
-4. [Repository Structure](#4-repository-structure)
-5. [Automation Workflow](#5-automation-workflow)
-6. [Execution Pipeline](#6-execution-pipeline)
-7. [Monitoring Architecture](#7-monitoring-architecture)
-8. [Data Pipeline](#8-data-pipeline)
-9. [Key Scripts Reference](#9-key-scripts-reference)
-10. [How `run_experiment1.sh` Works](#10-how-run_experiment1sh-works)
-11. [Digital Twin Setup](#11-digital-twin-setup)
-12. [Traffic Replay Subsystem](#12-traffic-replay-subsystem)
-13. [Grafana + Prometheus Integration](#13-grafana--prometheus-integration)
-14. [Observability Design](#14-observability-design)
-15. [One-Click Flask Controller](#15-one-click-flask-controller)
-16. [Installation Guide](#16-installation-guide)
-17. [Usage Guide](#17-usage-guide)
-18. [Future Improvements](#18-future-improvements)
-19. [Conclusion](#19-conclusion)
+1. [Project Story — How It All Started](#1-project-story--how-it-all-started)
+2. [Phase 1 — Environment Setup with Multipass](#2-phase-1--environment-setup-with-multipass)
+3. [Phase 2 — Installing Comnetsemu](#3-phase-2--installing-comnetsemu)
+4. [Phase 3 — The 5G Network Base (Granelli Lab)](#4-phase-3--the-5g-network-base-granelli-lab)
+5. [Phase 4 — The Digital Twin Foundation (TatendaHZ)](#5-phase-4--the-digital-twin-foundation-tatendahz)
+6. [System Architecture — What Was Built](#6-system-architecture--what-was-built)
+7. [The Real Repository Structure](#7-the-real-repository-structure)
+8. [The Physical Twin — Amarisoft CALLBOX](#8-the-physical-twin--amarisoft-callbox)
+9. [The Digital Twin — 4 UPF Slices, 5 UEs](#9-the-digital-twin--4-upf-slices-5-ues)
+10. [The Pipeline — Step by Step](#10-the-pipeline--step-by-step)
+11. [The Friction Gap — The Problem I Solved](#11-the-friction-gap--the-problem-i-solved)
+12. [Phase 5 — The Automation Solution](#12-phase-5--the-automation-solution)
+13. [The dashboard_automation/ Module](#13-the-dashboard_automation-module)
+14. [Grafana Provisioning — Configuration as Code](#14-grafana-provisioning--configuration-as-code)
+15. [The Flask Controller (app.py)](#15-the-flask-controller-apppy)
+16. [Traffic Replay — PCAP Architecture](#16-traffic-replay--pcap-architecture)
+17. [Monitoring Stack](#17-monitoring-stack)
+18. [Access URLs & Credentials](#18-access-urls--credentials)
+19. [GitHub Documentation Guide](#19-github-documentation-guide)
+20. [What Screenshots to Capture](#20-what-screenshots-to-capture)
+21. [Conclusion](#21-conclusion)
 
 ---
 
-## 1. Project Overview
+## 1. Project Story — How It All Started
 
-### 1.1 Abstract
+This project did not begin with a finished design. It evolved through several distinct phases, each building directly on the work of the previous one. This document records that journey honestly — what I used, what I built on top of, and what problem I solved.
 
-This project implements a **5G network digital twin** — a fully emulated, software-defined replica of a real-world Amarisoft 5G testbed. The twin is designed to faithfully reproduce the radio access and core network behavior of a physical 5G deployment, enabling reproducible experimentation, traffic analysis, and observability research without requiring dedicated hardware.
+The end goal was: **one click → 5G network running → real traffic replayed → Grafana dashboard open automatically**. Getting there required assembling four separate layers of open-source infrastructure and then writing the glue that eliminated all remaining manual steps.
 
-The platform integrates:
-
-- **Network emulation** via Comnetsemu/Containernet (Docker-in-Mininet)
-- **5G Core Network** via Open5GS (AMF, SMF, UPF, NRF, AUSF, PCF, BSF, UDR, UDM, SCP)
-- **RAN simulation** via UERANSIM (gNB + multi-UE)
-- **Real traffic injection** via `tcpreplay` with captured PCAP traces
-- **Metrics collection** via Prometheus + combined scraper
-- **Visualization** via Grafana dashboards with real-time radio KPIs
-- **Automation** via a Bash/Python orchestration pipeline
-- **Control UI** via a Flask-based single-page controller
-
-The system is designed for **research-level reproducibility**: a single command spins up the entire stack, runs a traffic experiment, collects metrics, and delivers a populated Grafana dashboard — all without manual intervention.
-
-### 1.2 Motivation
-
-Physical 5G testbeds (such as Amarisoft CALLBOX) are expensive, non-shareable, and difficult to configure repeatably. A digital twin solves these problems by:
-
-- Enabling parallel experimentation on commodity hardware
-- Providing deterministic, reproducible traffic scenarios via PCAP replay
-- Decoupling RAN parameter tuning from hardware availability
-- Enabling CI/CD-style automated test campaigns
-- Offering deep observability into KPIs (CQI, MCS, SNR, path loss, bitrate) that are difficult to extract from real hardware in real time
-
-### 1.3 Design Goals
-
-| Goal | Implementation |
-|------|---------------|
-| Full stack automation | `run_experiment1.sh` orchestrator |
-| Reproducible traffic | PCAP capture → `tcpreplay` injection |
-| Real-time observability | Prometheus scrape + Grafana render |
-| Zero-touch deployment | Single `bash run_experiment1.sh` |
-| Clean teardown | `clean.sh` full reset |
-| Manual override | Flask controller UI |
-| Amarisoft metric parity | `combined_scraper.py` translation layer |
-
----
-
-## 2. System Architecture
-
-### 2.1 High-Level Architecture Diagram
+### The Journey at a Glance
 
 ```
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                  AMARISOFT DIGITAL TWIN — SYSTEM ARCHITECTURE               ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║                                                                              ║
-║  ┌─────────────────────────────────────────────────────────────────────┐    ║
-║  │                      HOST MACHINE (Ubuntu 22.04)                    │    ║
-║  │                                                                     │    ║
-║  │  ┌──────────────────────────────────────────────────────────────┐  │    ║
-║  │  │               COMNETSEMU / CONTAINERNET LAYER                │  │    ║
-║  │  │                                                              │  │    ║
-║  │  │   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐   │  │    ║
-║  │  │   │  gNB Node   │    │  UE Node    │    │  UPF Node   │   │  │    ║
-║  │  │   │ (UERANSIM)  │◄──►│ (UERANSIM)  │    │ (Open5GS)   │   │  │    ║
-║  │  │   └──────┬──────┘    └─────────────┘    └──────┬──────┘   │  │    ║
-║  │  │          │  N2/N3 Interface                     │          │  │    ║
-║  │  │          ▼                                      ▼          │  │    ║
-║  │  │   ┌──────────────────────────────────────────────────┐    │  │    ║
-║  │  │   │              5G CORE (Open5GS)                   │    │  │    ║
-║  │  │   │  AMF ── SMF ── UPF ── NRF ── AUSF ── PCF        │    │  │    ║
-║  │  │   │  UDM ── UDR ── BSF ── SCP ── MongoDB            │    │  │    ║
-║  │  │   └──────────────────────────────────────────────────┘    │  │    ║
-║  │  │                                                              │  │    ║
-║  │  │   ┌──────────────────────────────────────────────────┐    │  │    ║
-║  │  │   │         TRAFFIC REPLAY SUBSYSTEM                 │    │  │    ║
-║  │  │   │  PCAP File ──► tcpreplay ──► UPF Interface       │    │  │    ║
-║  │  │   └──────────────────────────────────────────────────┘    │  │    ║
-║  │  └──────────────────────────────────────────────────────────────┘  │    ║
-║  │                                                                     │    ║
-║  │  ┌──────────────────────────────────────────────────────────────┐  │    ║
-║  │  │                   OBSERVABILITY STACK                        │  │    ║
-║  │  │                                                              │  │    ║
-║  │  │  ┌──────────────────┐      ┌───────────────────────────┐   │  │    ║
-║  │  │  │  combined_       │      │       Prometheus           │   │  │    ║
-║  │  │  │  scraper.py      │─────►│  :9090 (scrape + store)   │   │  │    ║
-║  │  │  │                  │      └────────────┬──────────────┘   │  │    ║
-║  │  │  │  twin_data_      │                   │                   │  │    ║
-║  │  │  │  collector.py    │                   ▼                   │  │    ║
-║  │  │  └──────────────────┘      ┌───────────────────────────┐   │  │    ║
-║  │  │                            │         Grafana            │   │  │    ║
-║  │  │  ┌──────────────────┐      │  :3000 (dashboards/KPIs)  │   │  │    ║
-║  │  │  │  Flask Controller│      └───────────────────────────┘   │  │    ║
-║  │  │  │  app.py :5000    │                                       │  │    ║
-║  │  │  └──────────────────┘                                       │  │    ║
-║  │  └──────────────────────────────────────────────────────────────┘  │    ║
-║  └─────────────────────────────────────────────────────────────────────┘    ║
-║                                                                              ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-```
+PHASE 1 — Environment
+  └── Multipass VM (Ubuntu 20.04)
 
-### 2.2 Network Topology Diagram
+PHASE 2 — Network Emulation Foundation
+  └── Comnetsemu + Containernet (Granelli Lab, Option B)
+        └── https://www.granelli-lab.org/researches/relevant-projects/comnetsemu-labs
 
-```
-                         ┌─────────────────────────────────────┐
-                         │          CONTAINERNET TOPOLOGY       │
-                         └─────────────────────────────────────┘
+PHASE 3 — 5G Network Layer
+  └── comnetsemu_5Gnet (Granelli Lab GitHub)
+        └── https://github.com/fabrizio-granelli/comnetsemu_5Gnet
 
-  ┌──────────┐  Uu (air)   ┌──────────┐   N3 (GTP-U)   ┌──────────────┐
-  │   UE     │◄───────────►│   gNB    │◄───────────────►│    UPF       │
-  │ (UERANSIM│             │(UERANSIM)│                 │  (Open5GS)   │
-  └──────────┘             └────┬─────┘                 └──────┬───────┘
-                                │ N2 (NGAP/SCTP)               │ N6
-                                ▼                               ▼
-                         ┌─────────────┐             ┌─────────────────┐
-                         │    AMF      │             │   Data Network   │
-                         │  (Open5GS)  │             │  (tcpreplay inj) │
-                         └──────┬──────┘             └─────────────────┘
-                                │ N11
-                         ┌──────▼──────┐
-                         │    SMF      │
-                         │  (Open5GS)  │
-                         └─────────────┘
+PHASE 4 — Digital Twin Base
+  └── Amarisoft.digital.twin (TatendaHZ GitHub)
+        └── https://github.com/TatendaHZ/Amarisoft.digital.twin
 
-  Container Network: 10.45.0.0/16 (UE pool)
-  N2 Interface:      192.168.0.0/24
-  N3 Interface:      192.168.1.0/24
+PHASE 5 — My Contribution: Closing the Automation Gap
+  └── dashboard_automation/ module
+  └── Grafana provisioning (config-as-code)
+  └── Flask controller with live logs and auto-browser-open
+  └── run_experiment1.sh full pipeline
 ```
 
 ---
 
-## 3. Component Descriptions
+## 2. Phase 1 — Environment Setup with Multipass
 
-### 3.1 Infrastructure Layer
+The entire project runs inside an **Ubuntu 20.04 Multipass virtual machine**. Multipass was chosen because it provides a clean, isolated Linux environment on any host OS (including Apple Silicon M1/M2), which is essential since Comnetsemu requires low-level Linux networking capabilities.
 
-#### Comnetsemu / Containernet
+### Why Multipass?
 
-**Role:** Network emulation fabric. Wraps Docker containers as Mininet hosts, providing:
-- Programmable virtual links between containers
-- Bandwidth, delay, and loss emulation via Linux `tc`
-- Python-native topology scripting API
-- Integration with Open vSwitch for SDN control
+- Works on macOS, Windows, and Linux hosts
+- Provides a full Ubuntu VM with kernel-level network namespace support
+- Supports file transfer between host and VM
+- Best option for Apple Silicon (M1/M2) platforms where Docker Desktop has limitations
+- No complex hypervisor configuration required
 
-**Key configuration points:**
-- Custom Docker images for each network function
-- Virtual Ethernet (veth) pairs between containers
-- Namespace isolation per container-node
+### Step 1 — Install Multipass
 
-#### Open5GS Core Network
+Download and install Multipass from:
+```
+https://multipass.run/
+```
 
-**Role:** Standards-compliant 3GPP 5G SA (Standalone) core. Provides all Control Plane (CP) and User Plane (UP) functions:
+### Step 2 — Launch the VM
 
-| Function | Port | Role |
-|----------|------|------|
-| AMF | 38412 (NGAP) | Access and Mobility Management |
-| SMF | N11 | Session Management |
-| UPF | 2152 (GTP-U) | User Plane forwarding |
-| NRF | 7777 | Network Function Repository |
-| AUSF | — | Authentication Server |
-| PCF | — | Policy Control |
-| UDM | — | Unified Data Management |
-| UDR | — | Unified Data Repository |
-| BSF | — | Binding Support |
-| SCP | — | Service Communication Proxy |
+Run these commands on your **host machine** terminal:
 
-#### UERANSIM
+```bash
+# Create and launch a Ubuntu 20.04 VM named myVM
+multipass launch 20.04 --name myVM
 
-**Role:** Open-source 5G UE and gNB simulator. Implements:
-- NR (New Radio) air interface signaling
-- NGAP (N2) toward AMF
-- GTP-U (N3) toward UPF
-- Multiple UE simulation (configurable IMSI pool)
-- NAS signaling (Registration, PDU Session Establishment)
+# Connect to the VM shell
+multipass shell myVM
+```
 
-### 3.2 Automation Layer
+> **Note:** All commands from this point forward are run **inside the Multipass VM** unless stated otherwise.
 
-| Component | Language | Purpose |
-|-----------|----------|---------|
-| `run_experiment1.sh` | Bash | Master orchestrator — end-to-end pipeline |
-| `clean.sh` | Bash | Full environment teardown |
-| `modified.digital_twin_setup.py` | Python | Containernet topology instantiation |
-| `twin_data_collector.py` | Python | Background metrics data collection agent |
-| `test.pcap_replay_twin.py` | Python | PCAP replay controller |
+### Step 3 — Transfer Files (when needed)
 
-### 3.3 Monitoring Layer
+To copy files between your host and the VM:
 
-| Component | Technology | Port | Purpose |
-|-----------|-----------|------|---------|
-| Prometheus | Time-series DB | 9090 | Metric scraping and storage |
-| combined_scraper.py | Python/HTTP | 8000 | Custom exporter for Amarisoft-style KPIs |
-| Node Exporter | Go binary | 9100 | Host system metrics |
-| Grafana | Web dashboard | 3000 | Real-time visualization |
+```bash
+# From host → VM
+multipass transfer /path/on/host myVM:/home/ubuntu/
 
-### 3.4 Metrics Domain
+# From VM → host
+multipass transfer myVM:/home/ubuntu/file.txt /path/on/host/
+```
 
-The following KPIs are collected, translated from Amarisoft semantics, and visualized:
-
-| Metric | Unit | Source | Description |
-|--------|------|--------|-------------|
-| UL Bitrate | Mbps | UPF / gNB | Uplink throughput per UE |
-| DL Bitrate | Mbps | UPF / gNB | Downlink throughput per UE |
-| CQI | 0–15 | gNB report | Channel Quality Indicator |
-| MCS | 0–28 | gNB scheduler | Modulation and Coding Scheme |
-| SNR | dB | gNB measurement | Signal-to-Noise Ratio |
-| Path Loss | dB | Radio model | RF propagation loss |
+> **Recommended screenshot:** `multipass list` showing your VM running — place this at the top of your GitHub README under "Environment".
 
 ---
 
-## 4. Repository Structure
+## 3. Phase 2 — Installing Comnetsemu
+
+Source: **Granelli Lab** — Option B (Multipass)
+URL: `https://www.granelli-lab.org/researches/relevant-projects/comnetsemu-labs`
+
+Comnetsemu is a network emulation framework built on top of Mininet and Containernet. It allows Docker containers to be used as network nodes — which is exactly what is needed to run Open5GS and UERANSIM as emulated network functions on virtual links.
+
+### Installation Commands (inside Multipass VM)
+
+```bash
+# Step 1 — System update and dependencies
+sudo apt update
+sudo apt upgrade -y
+sudo apt install -y git iperf iperf3 make pkg-config \
+    python3 python3-dev python3-pip \
+    sudo ansible
+
+# Step 2 — Clone Comnetsemu
+git clone https://git.comnets.net/public-repo/comnetsemu
+
+# Step 3 — Run the installer
+cd comnetsemu/util/
+bash ./install.sh -a
+
+# Step 4 — Verify installation
+sudo mn
+```
+
+If `sudo mn` launches the Mininet CLI without errors, the foundation is working.
 
 ```
-amarisoft-digital-twin/
+mininet> net
+mininet> exit
+```
+
+> **Note:** The installer script (`install.sh -a`) installs all dependencies including Docker, Open vSwitch, and Python bindings. This takes 10–20 minutes.
+
+> **Recommended screenshot:** Terminal showing `sudo mn` running successfully.
+
+---
+
+## 4. Phase 3 — The 5G Network Base (Granelli Lab)
+
+Source: `https://github.com/fabrizio-granelli/comnetsemu_5Gnet`
+
+After Comnetsemu was working, the next step was to add a 5G network topology. The `comnetsemu_5Gnet` repository from Granelli Lab provides a Containernet-based 5G network with Open5GS and UERANSIM pre-configured to run inside Docker containers.
+
+### What This Repository Provides
+
+- Docker images for Open5GS core network functions (AMF, SMF, UPF, NRF, etc.)
+- Docker images for UERANSIM (gNB + UE)
+- Python topology scripts that wire the containers together
+- Pre-configured YAML files for all 5G interfaces (N2, N3, N6, SBI)
+- Scripts to initialize subscribers in MongoDB
+
+### Installation
+
+```bash
+# Clone inside the comnetsemu app directory
+cd ~/comnetsemu/app/
+git clone https://github.com/fabrizio-granelli/comnetsemu_5Gnet
+
+# Pull or build the required Docker images
+cd comnetsemu_5Gnet/build/
+bash build.sh
+# OR pull pre-built images:
+bash dockerhub_pull.sh
+```
+
+### Verify the 5G Stack
+
+```bash
+# Run the basic 5G topology
+sudo python3 digital_twin_setup.py
+```
+
+If UERANSIM logs show `PDU Session Establishment` succeeding and `uesimtun0` is created, the 5G stack is operational.
+
+> **Recommended screenshot:** UERANSIM terminal showing `[info] PDU session established` and the `uesimtun0` tunnel interface.
+
+---
+
+## 5. Phase 4 — The Digital Twin Foundation (TatendaHZ)
+
+Source: `https://github.com/TatendaHZ/Amarisoft.digital.twin`
+
+This is the repository that became the direct foundation of this project. It extends the basic 5G Containernet setup with:
+
+- A **physical twin** component that connects to a real Amarisoft CALLBOX
+- **Traffic capture** from the physical twin into PCAP files
+- **PCAP replay** into the digital twin using `tcpreplay`
+- **Multi-slice UPF architecture** (default, ims, internet, sos)
+- **Prometheus + Grafana** monitoring scaffolding
+- **`combined_scraper.py`** — a Prometheus exporter for twin KPIs
+- **`twin_data_collector.py`** — background KPI collection agent
+
+### Clone and Set Up
+
+```bash
+cd ~/comnetsemu/app/
+git clone https://github.com/TatendaHZ/Amarisoft.digital.twin
+cd Amarisoft.digital.twin
+
+# Install Python dependencies
+pip3 install prometheus-client flask requests docker scapy
+```
+
+This repository is the starting point for everything that follows. My work built directly on top of it.
+
+---
+
+## 6. System Architecture — What Was Built
+
+After all four phases, the system consists of two parallel environments connected by a traffic capture and replay pipeline.
+
+```
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║                    FULL SYSTEM — DUAL TWIN ARCHITECTURE                         ║
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                  ║
+║   PHYSICAL TWIN                          DIGITAL TWIN                            ║
+║   ┌─────────────────────────┐            ┌────────────────────────────────────┐  ║
+║   │  Amarisoft CALLBOX      │            │  Ubuntu Multipass VM               │  ║
+║   │  (Real 5G Hardware)     │            │                                    │  ║
+║   │                         │  SSH +     │  ┌──────────────────────────────┐  │  ║
+║   │  gNB (real radio)       │  PCAP  ───►│  │  Comnetsemu / Containernet   │  │  ║
+║   │  AMF / SMF / UPF        │  capture   │  │                              │  │  ║
+║   │                         │            │  │  gNB ─── UE1..UE5            │  │  ║
+║   │  UPF slices:            │            │  │  │                           │  │  ║
+║   │  • upf_default          │            │  │  AMF ── SMF ── NRF           │  │  ║
+║   │  • upf_ims              │            │  │  │                           │  │  ║
+║   │  • upf_internet         │            │  │  UPF Slices:                 │  │  ║
+║   │  • upf_sos              │            │  │  • upf_default  (×10 PCAPs) │  │  ║
+║   │                         │            │  │  • upf_ims      (×10 PCAPs) │  │  ║
+║   │  regenerationtaffic.py  │            │  │  • upf_internet (×10 PCAPs) │  │  ║
+║   │  (runs on CALLBOX)      │            │  │  • upf_sos      (×10 PCAPs) │  │  ║
+║   └─────────────────────────┘            │  └──────────────────────────────┘  │  ║
+║                                          │                                    │  ║
+║                                          │  ┌──────────────────────────────┐  │  ║
+║                                          │  │  OBSERVABILITY STACK         │  │  ║
+║                                          │  │                              │  │  ║
+║                                          │  │  twin_data_collector.py      │  │  ║
+║                                          │  │       │                      │  │  ║
+║                                          │  │  combined_scraper.py (:9091) │  │  ║
+║                                          │  │       │                      │  │  ║
+║                                          │  │  Prometheus (:9090)          │  │  ║
+║                                          │  │       │                      │  │  ║
+║                                          │  │  Grafana Docker (:8000)      │  │  ║
+║                                          │  │  UniTN_Digital_Twin dashboard│  │  ║
+║                                          │  └──────────────────────────────┘  │  ║
+║                                          │                                    │  ║
+║                                          │  ┌──────────────────────────────┐  │  ║
+║                                          │  │  CONTROLLER                  │  │  ║
+║                                          │  │  dashboard_automation/app.py │  │  ║
+║                                          │  │  Flask UI — Run/Stop/Clean   │  │  ║
+║                                          │  └──────────────────────────────┘  │  ║
+║                                          └────────────────────────────────────┘  ║
+║                                                                                  ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+```
+
+### 5G Core Network Functions (Open5GS)
+
+| NF | Role | Log file |
+|----|------|----------|
+| AMF | Access & Mobility Management | `log/amf.log` |
+| SMF | Session Management | `log/smf.log` |
+| UPF (×4) | User Plane — one per slice | `log/upf_default.log` etc. |
+| NRF | Network Function Repository | `log/nrf.log` |
+| AUSF | Authentication Server | `log/ausf.log` |
+| PCF | Policy Control | `log/pcf.log` |
+| UDM | Unified Data Management | `log/udm.log` |
+| UDR | Unified Data Repository | `log/udr.log` |
+| BSF | Binding Support | `log/bsf.log` |
+
+### RAN (UERANSIM)
+
+| Component | Config file | Role |
+|-----------|------------|------|
+| gNB | `ueransim/config/open5gs-gnb.yaml` | Base station |
+| UE 1–5 | `ueransim/config/open5gs-ue1.yaml` ... `ue5.yaml` | 5 simulated devices |
+
+---
+
+## 7. The Real Repository Structure
+
+This is the actual directory layout of the project as it exists on disk:
+
+```
+Amarisoft.digital.twin/
 │
-├── README.md                          # This document
-├── docs/
-│   ├── architecture.md                # Detailed architecture reference
-│   ├── metrics_reference.md           # KPI definitions and mappings
-│   └── diagrams/
-│       ├── system_architecture.png
-│       └── data_pipeline.png
+├── ── CORE SCRIPTS ───────────────────────────────────────────────
+├── run_experiment1.sh              ★ Master pipeline (full automation)
+├── run_experiment.sh               Alternative run script
+├── clean.sh                        Full environment teardown
+├── modified.digital_twin_setup.py  Containernet topology builder
+├── twin_data_collector.py          Background KPI collection agent
+├── combined_scraper.py             Prometheus exporter (:9091)
+├── test.pcap_replay_twin.py        PCAP replay controller (digital twin)
 │
-├── scripts/
-│   ├── run_experiment1.sh             # ★ Master orchestration script
-│   └── clean.sh                       # Environment teardown
-│
-├── topology/
-│   └── modified.digital_twin_setup.py # Containernet topology definition
-│
-├── collection/
-│   ├── twin_data_collector.py         # Background KPI data collection agent
-│   └── combined_scraper.py            # Prometheus-compatible exporter
-│
-├── replay/
-│   ├── test.pcap_replay_twin.py       # PCAP replay controller
-│   └── captures/
-│       └── test.pcap                  # Reference PCAP trace
-│
-├── monitoring/
-│   ├── prometheus.yml                 # Prometheus scrape configuration
-│   └── grafana/
-│       ├── provisioning/
-│       │   ├── datasources/
-│       │   │   └── prometheus.yml
-│       │   └── dashboards/
-│       │       └── dashboard.yml
+├── ── DASHBOARD AUTOMATION (MY CONTRIBUTION) ──────────────────────
+├── dashboard_automation/
+│   ├── app.py                      Flask controller (Run/Stop/Open Dashboard)
+│   ├── templates/
+│   │   └── index.html              Web UI (Run Twin / Stop / Live Logs)
+│   ├── static/
+│   │   ├── app.js                  Frontend polling and log streaming
+│   │   └── style.css               UI styling
+│   └── provisioning/               ← Mounted into Grafana container
+│       ├── datasources/
+│       │   └── ds.yaml             Auto-registers Prometheus datasource
 │       └── dashboards/
-│           └── twin_dashboard.json    # Pre-built KPI dashboard
+│           ├── provider.yaml       Grafana dashboard file loader config
+│           ├── UniTN_Digital_Twin.json   ★ Pre-built KPI dashboard
+│           └── UniTN_Digital_Twin.json.save
 │
-├── controller/
-│   └── app.py                         # Flask one-click UI controller
+├── ── PHYSICAL TWIN ───────────────────────────────────────────────
+├── amarisoft_physical_twin/
+│   ├── regenerationtaffic.py       Runs ON the Amarisoft CALLBOX (SSH)
+│   ├── resourcetest.py             Resource usage tester
+│   ├── runPhysicaltwin.sh          Physical twin runner
+│   └── code/                       Physical twin support scripts
 │
-├── config/
-│   ├── open5gs/
-│   │   ├── amf.yaml
-│   │   ├── smf.yaml
-│   │   └── upf.yaml
-│   └── ueransim/
-│       ├── gnb.yaml
-│       └── ue.yaml
+├── ── TRAFFIC CAPTURES ────────────────────────────────────────────
+├── digitaltwin.traffic/            PCAP files for DIGITAL twin replay
+│   ├── upf_defaultd1.pcap .. d10.pcap    (10 captures, UPF default slice)
+│   ├── upf_imsd1.pcap     .. d10.pcap    (10 captures, IMS slice)
+│   ├── upf_internetd1.pcap .. d10.pcap   (10 captures, Internet slice)
+│   └── upf_sosd1.pcap     .. d10.pcap    (10 captures, SOS slice)
 │
-├── docker/
-│   ├── Dockerfile.open5gs
-│   ├── Dockerfile.ueransim
-│   └── docker-compose.yml
+├── physicaltwin.traffic/           PCAP captures FROM the real Amarisoft
+│   ├── upf_default1.pcap .. default10.pcap
+│   ├── upf_ims1168.pcap
+│   ├── upf_internet1168.pcap
+│   └── upf_sos1168.pcap
 │
-├── requirements.txt                   # Python dependencies
-└── LICENSE
+├── physicaltwindata/               Processed physical twin PCAP data
+│   ├── upf_default1.pcap .. default6.pcap
+│   ├── upf_ims1.pcap, ims2.pcap, ims4.pcap, ims5.pcap
+│
+├── ── SCRAPERS (multiple versions evolved) ────────────────────────
+├── combined_scraper.py             Production scraper
+├── combined_scraper_sim.py         Simulation-mode scraper (no hardware)
+├── combined.gnbscraper2.py         gNB-specific scraper v2
+├── Amarisoft_gnb_scraper.py        Direct Amarisoft gNB metrics scraper
+├── gnbscrapper.py                  gNB scraper (early version)
+├── updated_combined_scraper.py     Updated production scraper
+│
+├── ── MONITORING ──────────────────────────────────────────────────
+├── monitoring/
+│   ├── prometheus/
+│   │   ├── prometheus             Prometheus binary
+│   │   ├── prometheus.yml         ★ Active scrape configuration
+│   │   └── data/                  Time-series database
+│   └── prometheus.yml             Root-level prometheus config
+├── prometheus.yml                  Top-level config reference
+│
+├── ── 5G CONFIGURATION ────────────────────────────────────────────
+├── open5gs/
+│   └── config/
+│       ├── amf.yaml, smf.yaml, nrf.yaml, ausf.yaml
+│       ├── bsf.yaml, nssf.yaml, pcf.yaml, udm.yaml, udr.yaml
+│       ├── upf_default.yaml       UPF for default slice
+│       ├── upf_ims.yaml           UPF for IMS slice
+│       ├── upf_internet.yaml      UPF for Internet slice
+│       └── upf_sos.yaml           UPF for SOS (emergency) slice
+│
+├── ueransim/
+│   └── config/
+│       ├── open5gs-gnb.yaml       gNB configuration
+│       ├── open5gs-ue.yaml        Single UE (default)
+│       ├── open5gs-ue1.yaml .. ue5.yaml   5 UE configurations
+│       └── open5gs_gnb_init.sh    gNB startup init script
+│
+├── ── DOCKER ──────────────────────────────────────────────────────
+├── build/
+│   ├── Dockerfile_5gc             Open5GS core Docker image
+│   ├── Dockerfile_ueransim        UERANSIM Docker image
+│   ├── build.sh                   Build all images
+│   └── dockerhub_pull.sh          Pull pre-built images
+│
+├── ── LOGS ────────────────────────────────────────────────────────
+├── log/
+│   ├── amf.log, smf.log, nrf.log, ausf.log, bsf.log
+│   ├── gnb.log, ue.log
+│   ├── upf_default.log, upf_ims.log
+│   ├── upf_internet.log, upf_sos.log
+│   └── mongodb.log, nssf.log, pcf.log, udm.log, udr.log
+│
+└── ── RESOURCE MONITORING ─────────────────────────────────────────
+    ├── resource_usage.csv          Recorded resource usage data
+    ├── resource_usage_plot.png     Generated resource usage graph
+    ├── plot.py / plot2.py          Plotting scripts
+    └── upf_bitrate_monitor.py (×3) UPF bitrate monitoring tools
 ```
 
 ---
 
-## 5. Automation Workflow
+## 8. The Physical Twin — Amarisoft CALLBOX
 
-### 5.1 Automation Flow Diagram
+The physical twin is a real Amarisoft 5G base station (CALLBOX). It runs a live gNB and core network functions, producing actual 5G traffic across its 4 UPF slices.
 
-```
-╔══════════════════════════════════════════════════╗
-║           AUTOMATION FLOW (run_experiment1.sh)   ║
-╚══════════════════════════════════════════════════╝
-
-     ┌────────────────────┐
-     │   START SCRIPT     │
-     └─────────┬──────────┘
-               │
-               ▼
-     ┌────────────────────┐
-  1  │   clean.sh         │  ← Kill containers, processes, reset netns
-     │   (Environment     │
-     │    Cleanup)        │
-     └─────────┬──────────┘
-               │
-               ▼
-     ┌────────────────────┐
-  2  │ twin_data_         │  ← Launch background KPI collector
-     │ collector.py       │    (daemonized, writes to local store)
-     └─────────┬──────────┘
-               │
-               ▼
-     ┌────────────────────┐
-  3  │ modified.digital_  │  ← Containernet topology up:
-     │ twin_setup.py      │    Open5GS + UERANSIM containers
-     └─────────┬──────────┘
-               │
-               ▼
-     ┌────────────────────┐
-  4  │ WAIT: Container    │  ← Poll until all containers report healthy
-     │ Health Check       │    (AMF, SMF, UPF, gNB, UE ready)
-     └─────────┬──────────┘
-               │
-               ▼
-     ┌────────────────────┐
-  5  │ INSTALL tcpreplay  │  ← apt install inside UPF containers
-     │ in UPF containers  │    (enables traffic injection capability)
-     └─────────┬──────────┘
-               │
-               ▼
-     ┌────────────────────┐
-  6  │ START Prometheus   │  ← Load prometheus.yml scrape config
-     │ (:9090)            │    Begin time-series collection
-     └─────────┬──────────┘
-               │
-               ▼
-     ┌────────────────────┐
-  7  │ START Grafana      │  ← Auto-provision datasource + dashboard
-     │ (:3000)            │    Load twin_dashboard.json
-     └─────────┬──────────┘
-               │
-               ▼
-     ┌────────────────────┐
-  8  │ combined_          │  ← Start Prometheus exporter
-     │ scraper.py (:8000) │    Translates Amarisoft KPI format
-     └─────────┬──────────┘
-               │
-               ▼
-     ┌────────────────────┐
-  9  │ AMARISOFT TRAFFIC  │  ← Stimulate gNB/UE with synthetic load
-     │ REGENERATION       │    Baseline traffic profile active
-     └─────────┬──────────┘
-               │
-               ▼
-     ┌────────────────────┐
- 10  │ PCAP REPLAY        │  ← test.pcap_replay_twin.py
-     │ (tcpreplay inject) │    Injects captured real traffic
-     └─────────┬──────────┘
-               │
-               ▼
-     ┌────────────────────┐
- 11  │ METRICS SCRAPED    │  ← combined_scraper → Prometheus
-     │ & STORED           │    (UL/DL bitrate, CQI, MCS, SNR, PL)
-     └─────────┬──────────┘
-               │
-               ▼
-     ┌────────────────────┐
- 12  │ GRAFANA            │  ← Live dashboard populated with KPIs
-     │ VISUALIZATION      │    Graphs update in real time
-     └─────────┬──────────┘
-               │
-               ▼
-     ┌────────────────────┐
-     │  EXPERIMENT DONE   │
-     └────────────────────┘
-```
-
-### 5.2 Dependency Graph
+### Connection Architecture
 
 ```
-clean.sh
-    └──► twin_data_collector.py  (background)
-             └──► modified.digital_twin_setup.py
-                      └──► [containers healthy?]
-                                └──► install tcpreplay
-                                         └──► prometheus
-                                                  └──► grafana
-                                                           └──► combined_scraper.py
-                                                                    └──► traffic regen
-                                                                              └──► pcap replay
-                                                                                        └──► metrics live
+Digital Twin VM (192.168.2.2)
+        │
+        │ SSH connection
+        ▼
+Amarisoft CALLBOX (10.196.30.239)
+        │
+        ├── upf_default  — general data traffic
+        ├── upf_ims      — IP Multimedia Subsystem (voice/video)
+        ├── upf_internet — internet breakout
+        └── upf_sos      — emergency services slice
 ```
 
----
-
-## 6. Execution Pipeline
-
-### 6.1 Stage-by-Stage Breakdown
-
-#### Stage 1 — Environment Cleanup (`clean.sh`)
-
-Ensures a pristine environment before each run, eliminating state pollution from previous experiments.
+### Physical Twin Pipeline
 
 ```bash
-# clean.sh — actions performed:
-sudo mn --clean                     # Mininet/Containernet teardown
-docker rm -f $(docker ps -aq)       # Remove all containers
-sudo ip link del br-twin 2>/dev/null # Remove virtual bridges
-sudo pkill -f prometheus
-sudo pkill -f grafana
-sudo pkill -f combined_scraper
-sudo pkill -f twin_data_collector
-sudo pkill -f tcpreplay
+# Step 1: SSH into Amarisoft and clean old captures
+ssh root@<AMARISOFT_IP>
+rm -f /root/Desktop/traffic/*.pcap
+rm -f /root/Desktop/traffic/iteration/*.pcap
+
+# Step 2: Run traffic regeneration on Amarisoft (runs for 2m 15s)
+python3 /root/regenerationtaffic.py
+
+# Step 3: Captured PCAPs are then transferred back to the digital twin VM
 ```
 
-#### Stage 2 — Data Collector Launch
+The `regenerationtaffic.py` script (in `amarisoft_physical_twin/`) generates controlled traffic through the Amarisoft radio stack, which is captured as PCAP files per UPF slice.
 
-`twin_data_collector.py` is started as a background process. It continuously polls internal container stats APIs and aggregates raw metrics into a structured buffer consumed by `combined_scraper.py`.
-
-#### Stage 3 — Topology Instantiation
-
-`modified.digital_twin_setup.py` programmatically constructs the Containernet topology:
-- Creates Docker-backed Mininet hosts for each NF
-- Wires virtual links with specified bandwidth profiles
-- Configures IP addressing per 3GPP interface conventions
-- Starts Open5GS processes inside containers
-- Starts UERANSIM gNB and UE processes
-
-#### Stage 4 — Readiness Polling
-
-The script enters a polling loop, checking for:
-- Container `Running` status via `docker inspect`
-- Open5GS AMF NGAP port `38412` reachability
-- UERANSIM gNB registration confirmation (log parsing)
-- UE PDU Session Establishment (tunnel `uesimtun0` up)
-
-#### Stage 5 — tcpreplay Installation
-
-`tcpreplay` is installed inside UPF containers at runtime (rather than baked into the image) to allow flexible version management and minimize base image size.
-
-```bash
-docker exec upf1 apt-get install -y tcpreplay
-docker exec upf2 apt-get install -y tcpreplay
-```
-
-#### Stage 6 — Prometheus Launch
-
-Prometheus is started with the project's `prometheus.yml` configuration, which defines scrape intervals and target endpoints. The combined scraper's `/metrics` endpoint is registered as a scrape target.
-
-#### Stage 7 — Grafana Launch
-
-Grafana is launched with auto-provisioning enabled. The `twin_dashboard.json` is loaded automatically, and the Prometheus datasource is pre-configured via the provisioning YAML — no manual UI setup required.
-
-#### Stage 8 — Combined Scraper
-
-`combined_scraper.py` starts its HTTP server on port `8000`, exposing a `/metrics` endpoint in Prometheus exposition format. It draws data from `twin_data_collector.py`'s buffer.
-
-#### Stage 9 — Traffic Regeneration
-
-Synthetic load is applied to the 5G stack to establish baseline traffic patterns matching the Amarisoft reference profile.
-
-#### Stage 10 — PCAP Replay
-
-`test.pcap_replay_twin.py` invokes `tcpreplay` inside the UPF container, injecting a captured PCAP trace at configurable replay rates. This provides deterministic, reproducible traffic patterns.
-
-#### Stages 11–12 — Metrics & Visualization
-
-Prometheus scrapes the combined exporter every `N` seconds. Grafana renders the incoming time-series data in the pre-built dashboard. KPIs (bitrate, CQI, MCS, SNR, path loss) are displayed in real time.
+> **Important timing:** Let `regenerationtaffic.py` run for exactly **2 minutes and 15 seconds** before stopping. This produces consistent, comparable captures across experiments.
 
 ---
 
-## 7. Monitoring Architecture
+## 9. The Digital Twin — 4 UPF Slices, 5 UEs
 
-### 7.1 Monitoring Stack Diagram
+The digital twin replicates the Amarisoft slice architecture entirely in software using Open5GS and Containernet.
+
+### UPF Slice Architecture
 
 ```
-╔══════════════════════════════════════════════════════════════╗
-║                  MONITORING ARCHITECTURE                     ║
-╠══════════════════════════════════════════════════════════════╣
-║                                                              ║
-║  DATA SOURCES                                                ║
-║  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      ║
-║  │  Open5GS     │  │  UERANSIM    │  │  Docker/     │      ║
-║  │  NF metrics  │  │  RAN KPIs    │  │  System      │      ║
-║  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘      ║
-║         │                 │                  │              ║
-║         └─────────────────┼──────────────────┘              ║
-║                           │                                  ║
-║                           ▼                                  ║
-║  ┌────────────────────────────────────────────────────────┐ ║
-║  │              twin_data_collector.py                    │ ║
-║  │  - Polls container APIs and log streams                │ ║
-║  │  - Normalizes metric names to Amarisoft conventions    │ ║
-║  │  - Buffers metrics in shared memory / file             │ ║
-║  └────────────────────────┬───────────────────────────────┘ ║
-║                           │                                  ║
-║                           ▼                                  ║
-║  ┌────────────────────────────────────────────────────────┐ ║
-║  │              combined_scraper.py (:8000)               │ ║
-║  │  - Reads from collector buffer                         │ ║
-║  │  - Exposes /metrics in Prometheus exposition format    │ ║
-║  │  - Gauge metrics: ul_bitrate, dl_bitrate, cqi, mcs,   │ ║
-║  │    snr, path_loss                                      │ ║
-║  └────────────────────────┬───────────────────────────────┘ ║
-║                           │  HTTP GET /metrics               ║
-║                           ▼  (scrape interval: 5s)           ║
-║  ┌────────────────────────────────────────────────────────┐ ║
-║  │              Prometheus Server (:9090)                 │ ║
-║  │  - TSDB (time-series storage)                          │ ║
-║  │  - PromQL query engine                                 │ ║
-║  │  - Configurable retention period                       │ ║
-║  └────────────────────────┬───────────────────────────────┘ ║
-║                           │  PromQL queries                  ║
-║                           ▼                                  ║
-║  ┌────────────────────────────────────────────────────────┐ ║
-║  │              Grafana Dashboard (:3000)                 │ ║
-║  │  - Real-time panel rendering                           │ ║
-║  │  - Pre-built twin_dashboard.json                       │ ║
-║  │  - Panels: UL/DL Bitrate, CQI, MCS, SNR, Path Loss   │ ║
-║  └────────────────────────────────────────────────────────┘ ║
-║                                                              ║
-╚══════════════════════════════════════════════════════════════╝
+                    Open5GS Core
+                         │
+          ┌──────────────┼──────────────┐
+          │              │              │
+     ┌────▼────┐   ┌─────▼────┐  ┌─────▼────┐   ┌──────────┐
+     │UPF      │   │UPF       │  │UPF       │   │UPF       │
+     │default  │   │ims       │  │internet  │   │sos       │
+     │(data)   │   │(voice/   │  │(breakout)│   │(emergency│
+     └─────────┘   │ video)   │  └──────────┘   │ services)│
+                   └──────────┘                 └──────────┘
 ```
 
-### 7.2 Prometheus Configuration (`prometheus.yml`)
+Each UPF slice has its own config file (`open5gs/config/upf_*.yaml`) and its own set of 10 captured PCAP files for replay:
+
+| Slice | Config | PCAP files (digital) | PCAP files (physical) |
+|-------|--------|---------------------|----------------------|
+| default | `upf_default.yaml` | `upf_defaultd1..d10.pcap` | `upf_default1..10.pcap` |
+| ims | `upf_ims.yaml` | `upf_imsd1..d10.pcap` | `upf_ims1168.pcap` |
+| internet | `upf_internet.yaml` | `upf_internetd1..d10.pcap` | `upf_internet1168.pcap` |
+| sos | `upf_sos.yaml` | `upf_sosd1..d10.pcap` | `upf_sos1168.pcap` |
+
+### UE Configuration
+
+5 separate UE configurations are supported, each with its own IMSI and PDU session profile:
+
+```
+ueransim/config/
+├── open5gs-ue1.yaml    IMSI: 999700000000001
+├── open5gs-ue2.yaml    IMSI: 999700000000002
+├── open5gs-ue3.yaml    IMSI: 999700000000003
+├── open5gs-ue4.yaml    IMSI: 999700000000004
+└── open5gs-ue5.yaml    IMSI: 999700000000005
+```
+
+Subscriber profiles for each UE are stored in `python_modules/subscriber_profile1..5.json` and loaded into MongoDB via `update_subcribers.py`.
+
+---
+
+## 10. The Pipeline — Step by Step
+
+This is the **exact pipeline** as documented in `README: Amarisoft–Digital Twin–Grafana Pipeline`:
+
+```
+╔══════════════════════════════════════════════════════════════════════════╗
+║              MASTER PIPELINE (run_experiment1.sh)                       ║
+╠══════════════════════════════════════════════════════════════════════════╣
+║                                                                          ║
+║  ┌─────────────────────────────────────────────────────────────────┐    ║
+║  │  DIGITAL TWIN SIDE                                              │    ║
+║  │                                                                 │    ║
+║  │  Step 1 ── python3 twin_data_collector.py           (bg)       │    ║
+║  │                │                                               │    ║
+║  │  Step 2 ── python3 modified.digital_twin_setup.py             │    ║
+║  │                │                                               │    ║
+║  │                ▼  [wait 60 seconds]                            │    ║
+║  │                │                                               │    ║
+║  │  Step 3 ── bash install_tcpreplay_in_upfs.sh                  │    ║
+║  │                │                                               │    ║
+║  │  Step 4 ── ./prometheus --config.file=prometheus.yml  (bg)    │    ║
+║  │                │                                               │    ║
+║  │  Step 5 ── docker run grafana/grafana -p 8000:3000            │    ║
+║  │                │  (with provisioning volume mounts)            │    ║
+║  │                │                                               │    ║
+║  │  Step 6 ── python3 combined_scraper.py               (bg)     │    ║
+║  └─────────────────────────────────────────────────────────────────┘    ║
+║                                                                          ║
+║  ┌─────────────────────────────────────────────────────────────────┐    ║
+║  │  AMARISOFT SIDE (SSH)                                           │    ║
+║  │                                                                 │    ║
+║  │  Step 7 ── ssh root@<CALLBOX_IP>                               │    ║
+║  │            rm -f /root/Desktop/traffic/*.pcap                  │    ║
+║  │                                                                 │    ║
+║  │  Step 8 ── python3 /root/regenerationtaffic.py                 │    ║
+║  │                │                                               │    ║
+║  │                ▼  [run for 2 minutes 15 seconds]               │    ║
+║  └─────────────────────────────────────────────────────────────────┘    ║
+║                                                                          ║
+║  ┌─────────────────────────────────────────────────────────────────┐    ║
+║  │  BACK ON DIGITAL TWIN                                           │    ║
+║  │                                                                 │    ║
+║  │  Step 9 ── python3 test.pcap_replay_twin.py                   │    ║
+║  │                │                                               │    ║
+║  │                ▼                                               │    ║
+║  │  Metrics scraped by Prometheus every 5s                        │    ║
+║  │  Grafana dashboard auto-open:                                  │    ║
+║  │  http://192.168.2.2:8000/d/cfajos0kkl81sb/unitn-digital-twin  │    ║
+║  └─────────────────────────────────────────────────────────────────┘    ║
+╚══════════════════════════════════════════════════════════════════════════╝
+```
+
+### Critical Timing
+
+| Wait | Duration | Reason |
+|------|----------|--------|
+| After `modified.digital_twin_setup.py` | **60 seconds** | Allow all Open5GS NFs to start and register with NRF |
+| `regenerationtaffic.py` on Amarisoft | **2 min 15 sec** | Ensures consistent traffic volume across experiments |
+
+---
+
+## 11. The Friction Gap — The Problem I Solved
+
+After building the pipeline above, the backend was fully automated. But there was still a critical manual step remaining every time the experiment ran:
+
+```
+╔══════════════════════════════════════════════════════════════════╗
+║               THE FRICTION GAP                                  ║
+╠══════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║  AUTOMATED (run_experiment1.sh)     MANUAL (still required)     ║
+║  ┌──────────────────────────┐       ┌──────────────────────┐   ║
+║  │ 0. Cleanup               │       │ 1. Login to Grafana   │   ║
+║  │ 1. Data Collector        │  ───► │ 2. Copy/Paste JSON    │   ║
+║  │ 2. Digital Twin Setup    │  GAP  │ 3. Copy random UID    │   ║
+║  │ 4. Prometheus            │       │ 4. Open browser       │   ║
+║  │ 7. PCAP Replay           │       └──────────────────────┘   ║
+║  └──────────────────────────┘                                   ║
+║                                                                  ║
+║  "After the script runs, I still need to manually copy a        ║
+║   Grafana dashboard UID and open the browser myself."           ║
+╚══════════════════════════════════════════════════════════════════╝
+```
+
+The core technical problems were:
+
+1. **Random UIDs:** Every time Grafana started fresh, the dashboard got a random UID like `RNHPJFURKAQrkrra...` — making it impossible to construct a predictable URL
+2. **Manual JSON import:** The dashboard JSON had to be copy-pasted through the Grafana UI each time
+3. **No datasource automation:** Prometheus had to be manually linked as a datasource
+4. **No feedback:** Once the script ran, there was no UI showing what stage was running or whether it had succeeded
+
+---
+
+## 12. Phase 5 — The Automation Solution
+
+To solve the friction gap, I built the `dashboard_automation/` module. The key insight, drawn from comparing two approaches:
+
+```
+╔═════════════════════════════════════════════════════════════════╗
+║          OPTION A: HTTP API        OPTION B: PROVISIONING      ║
+║                                                                 ║
+║  - Wait for container health     - Configuration as code       ║
+║  - Handle auth tokens            - Files mounted at startup    ║
+║  - Stateful and brittle          - Stateless, deterministic    ║
+║  - Race conditions               - Immediate availability      ║
+╠═════════════════════════════════════════════════════════════════╣
+║  CHOSEN: Option B — Grafana Provisioning                       ║
+║  Strategy: Make the ephemeral persistent by defining           ║
+║  infrastructure as code.                                       ║
+╚═════════════════════════════════════════════════════════════════╝
+```
+
+**Grafana provisioning** means mounting configuration files directly into the Docker container at startup. Grafana reads these files before it finishes booting — meaning the datasource and dashboard are available from the very first second.
+
+---
+
+## 13. The dashboard_automation/ Module
+
+```
+dashboard_automation/
+├── app.py                        ← Flask backend (control plane)
+├── templates/
+│   └── index.html                ← Web UI (Run Twin / Stop / Live Logs)
+├── static/
+│   ├── app.js                    ← Frontend: polling, log streaming
+│   └── style.css                 ← UI styling
+└── provisioning/                 ← Mounted INTO Docker container at start
+    ├── datasources/
+    │   └── ds.yaml               ← Auto-registers Prometheus as default datasource
+    └── dashboards/
+        ├── provider.yaml         ← Tells Grafana where to find dashboard JSON files
+        └── UniTN_Digital_Twin.json   ← Full dashboard with hardcoded UID
+```
+
+### How the Docker Run Command Changed
+
+**Before (no automation):**
+```bash
+sudo docker run -d -p 8000:3000 grafana/grafana
+```
+This starts Grafana with no config — every run produces a blank Grafana instance with a random dashboard UID.
+
+**After (with provisioning):**
+```bash
+sudo docker run -d -p 8000:3000 \
+  --name grafana_automation \
+  -v $(pwd)/dashboard_automation/provisioning/datasources:/etc/grafana/provisioning/datasources \
+  -v $(pwd)/dashboard_automation/provisioning/dashboards:/etc/grafana/provisioning/dashboards \
+  grafana/grafana
+```
+
+The two `-v` volume mounts inject the provisioning files into Grafana's configuration path before it starts. This is the entire mechanism.
+
+---
+
+## 14. Grafana Provisioning — Configuration as Code
+
+### Step 1 — Datasource Configuration
+
+**File:** `dashboard_automation/provisioning/datasources/ds.yaml`
+
+```yaml
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://172.17.0.1:9090    # Docker host IP — where Prometheus runs natively
+    isDefault: true                # No manual selection needed in UI
+```
+
+`172.17.0.1` is the Docker bridge host IP — the address the Grafana container uses to reach services running on the VM host (where Prometheus is running natively, not in Docker).
+
+### Step 2 — Dashboard JSON with Hardcoded UID
+
+**File:** `dashboard_automation/provisioning/dashboards/UniTN_Digital_Twin.json`
+
+The key change was hardcoding the `uid` field:
+
+```json
+{
+  "annotations": { ... },
+  "editable": true,
+  "id": null,
+  "uid": "cfajos0kkl81sb",
+  "title": "UniTN_Digital_Twin",
+  ...
+}
+```
+
+Setting `"uid": "cfajos0kkl81sb"` means the dashboard URL is **always predictable**:
+```
+http://192.168.2.2:8000/d/cfajos0kkl81sb/unitn-digital-twin
+```
+
+This eliminates the manual step of copying a random hash from the Grafana UI.
+
+### Step 3 — Dashboard Provider Configuration
+
+**File:** `dashboard_automation/provisioning/dashboards/provider.yaml`
+
+```yaml
+apiVersion: 1
+providers:
+  - name: 'Default'
+    orgId: 1
+    folder: ''
+    type: file
+    options:
+      path: /etc/grafana/provisioning/dashboards
+```
+
+This tells Grafana to scan the mounted directory for JSON files on startup and load them automatically.
+
+The complete flow is:
+```
+Local JSON File → Docker Volume Mount → Grafana /etc/grafana/provisioning → Auto-loaded on container start
+```
+
+---
+
+## 15. The Flask Controller (app.py)
+
+`dashboard_automation/app.py` is the control plane that bridges the web UI to the shell scripts.
+
+### Architecture
+
+```
+Browser ──► http://<VM_IP>:5000
+                │
+                ├── GET  /              → Serves index.html (UI)
+                ├── POST /run_twin      → Runs run_experiment1.sh via subprocess
+                ├── GET  /status        → Streams stdout/stderr back to browser
+                └── GET  /open-dashboard → Checks Grafana health, returns URL
+```
+
+### Key Implementation Patterns
+
+**Running the experiment:**
+```python
+import subprocess
+
+process = subprocess.Popen(
+    ['bash', 'run_experiment1.sh'],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT
+)
+```
+
+**Streaming live logs to the browser:**
+```python
+# /status endpoint reads from the running process stdout
+# and returns lines to the frontend JavaScript for display
+```
+
+**Auto-opening the dashboard:**
+```python
+import webbrowser, requests
+
+def check_and_open():
+    try:
+        r = requests.get('http://localhost:8000/api/health')
+        if r.status_code == 200:
+            target = 'http://localhost:8000/d/cfajos0kkl81sb/unitn-digital-twin'
+            webbrowser.open(target)
+    except:
+        pass
+```
+
+### The UI
+
+The web interface (`templates/index.html`) provides:
+- **▶ Run Twin** — triggers the full `run_experiment1.sh` pipeline
+- **⏹ Stop/Clean** — kills all processes and runs `clean.sh`
+- **Live Logs** — black terminal-style box showing real-time script output (e.g., `[2/9] Starting modified digital twin setup...`)
+- **Dashboard Ready: Open Grafana** — appears when Grafana health check passes, links directly to the UniTN dashboard
+
+---
+
+## 16. Traffic Replay — PCAP Architecture
+
+### How Traffic Gets from Physical to Digital
+
+```
+CAPTURE PHASE (on Amarisoft CALLBOX)
+┌─────────────────────────────────────────────────────────────┐
+│  regenerationtaffic.py runs → traffic flows through 4 UPFs  │
+│  tcpdump captures per-slice PCAP files                       │
+│  Files saved to /root/Desktop/traffic/                       │
+└──────────────────────────────────────┬──────────────────────┘
+                                       │ SCP / SSH transfer
+                                       ▼
+STORAGE (in Digital Twin VM)
+  physicaltwin.traffic/
+  ├── upf_default1.pcap .. upf_default10.pcap
+  ├── upf_ims1168.pcap
+  ├── upf_internet1168.pcap
+  └── upf_sos1168.pcap
+
+REPLAY PHASE (inside digital twin containers)
+┌─────────────────────────────────────────────────────────────┐
+│  test.pcap_replay_twin.py                                   │
+│  → docker exec upf_default tcpreplay --intf1=eth0 file.pcap │
+│  → docker exec upf_ims     tcpreplay --intf1=eth0 file.pcap │
+│  → docker exec upf_internet tcpreplay ...                   │
+│  → docker exec upf_sos      tcpreplay ...                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### tcpreplay Installation
+
+`tcpreplay` is not baked into the Docker image — it is installed at runtime via:
+
+```bash
+bash install_tcpreplay_in_upfs.sh
+```
+
+This runs `apt-get install -y tcpreplay` inside each UPF container after they start. This design keeps the base Docker images small and allows version flexibility.
+
+### The 10-File Rotation
+
+For the digital twin, each slice has **10 PCAP files** (d1–d10). The replay script cycles through these to provide variety in traffic patterns across repeated experiments:
+
+```
+digitaltwin.traffic/
+├── upf_defaultd1.pcap   ← Day 1 capture
+├── upf_defaultd2.pcap   ← Day 2 capture
+...
+└── upf_defaultd10.pcap  ← Day 10 capture
+```
+
+---
+
+## 17. Monitoring Stack
+
+### Prometheus Configuration
+
+**Active config:** `monitoring/prometheus/prometheus.yml`
 
 ```yaml
 global:
   scrape_interval: 5s
-  evaluation_interval: 5s
 
 scrape_configs:
-  - job_name: 'twin_combined_scraper'
+  - job_name: 'twin_scraper'
     static_configs:
-      - targets: ['localhost:8000']
-    metrics_path: /metrics
+      - targets: ['localhost:9091']    # combined_scraper.py
 
   - job_name: 'node_exporter'
     static_configs:
-      - targets: ['localhost:9100']
+      - targets: ['localhost:9100']    # install_and_start_node_exporter.sh
 
-  - job_name: 'open5gs_upf'
+  - job_name: 'amarisoft_gnb'
     static_configs:
-      - targets: ['172.17.0.x:9091']   # UPF container exporter
+      - targets: ['<CALLBOX_IP>:9092'] # Amarisoft_gnb_scraper.py
+```
 
-  - job_name: 'ueransim_gnb'
-    static_configs:
-      - targets: ['172.17.0.y:9092']   # gNB stats endpoint
+**Start Prometheus:**
+```bash
+cd monitoring/prometheus/
+sudo ./prometheus --config.file=prometheus.yml
+```
+
+**Prometheus UI:** `http://192.168.2.2:9090`
+
+### Grafana Dashboard — UniTN_Digital_Twin
+
+The `UniTN_Digital_Twin` dashboard (UID: `cfajos0kkl81sb`) has 4 panels visible in the final result:
+
+| Panel | Data Source | What it shows |
+|-------|------------|---------------|
+| Physical Twin: UL Bitrate | Prometheus | Uplink throughput from Amarisoft scraper |
+| Physical Twin: DL Bitrate | Prometheus | Downlink throughput from Amarisoft scraper |
+| Digital Twin: UPF UL Bitrate | Prometheus | UL throughput from combined_scraper (label: `ogstun`) |
+| Digital Twin: UPF DL Bitrate | Prometheus | DL throughput from combined_scraper (label: `ogstun`) |
+
+**Grafana access:** `http://192.168.2.2:8000`
+**Default credentials:** `admin / admin`
+**Dashboard direct URL:** `http://192.168.2.2:8000/d/cfajos0kkl81sb/unitn-digital-twin`
+
+---
+
+## 18. Access URLs & Credentials
+
+| Service | URL | Notes |
+|---------|-----|-------|
+| Grafana | `http://192.168.2.2:8000` | admin / admin |
+| UniTN Dashboard | `http://192.168.2.2:8000/d/cfajos0kkl81sb/unitn-digital-twin` | Direct link, always works |
+| Prometheus | `http://192.168.2.2:9090` | Targets: `/targets` |
+| Prometheus targets | `http://192.168.2.2:9090/targets` | Check scraper status |
+| Flask Controller | Run `python3 dashboard_automation/app.py` | Local port 5000 |
+
+> **Note:** `192.168.2.2` is the Multipass VM IP. If your VM has a different IP, replace accordingly. Check with `ip addr show` inside the VM.
+
+---
+
+## 19. GitHub Documentation Guide
+
+### Recommended Repository Structure for GitHub
+
+```
+README.md                  ← This document (main entry point)
+docs/
+├── build_guide.md         ← Step-by-step installation from zero
+├── pipeline_reference.md  ← Detailed pipeline step documentation
+└── architecture.md        ← System architecture deep dive
+images/
+├── architecture.png        ← System architecture diagram
+├── dashboard_screenshot.png ← Grafana dashboard showing all 4 panels
+├── controller_ui.png       ← Flask controller UI (Run/Stop/Logs)
+├── friction_gap.png        ← The before/after automation diagram
+└── multipass_setup.png     ← Multipass VM running
+```
+
+### README Badges to Include
+
+```markdown
+![Platform](https://img.shields.io/badge/Platform-Ubuntu%2020.04%20Multipass-blue)
+![Open5GS](https://img.shields.io/badge/Core-Open5GS-orange)
+![UERANSIM](https://img.shields.io/badge/RAN-UERANSIM-purple)
+![Prometheus](https://img.shields.io/badge/Monitoring-Prometheus-red)
+![Grafana](https://img.shields.io/badge/Viz-Grafana-yellow)
+![Status](https://img.shields.io/badge/Pipeline-Automated-brightgreen)
+```
+
+### Acknowledging the Source Repositories
+
+Include a clear acknowledgements section:
+
+```markdown
+## Built Upon
+
+This project builds on the work of:
+
+- **Granelli Lab — Comnetsemu:**
+  https://www.granelli-lab.org/researches/relevant-projects/comnetsemu-labs
+
+- **Granelli Lab — comnetsemu_5Gnet:**
+  https://github.com/fabrizio-granelli/comnetsemu_5Gnet
+
+- **TatendaHZ — Amarisoft.digital.twin (base repository):**
+  https://github.com/TatendaHZ/Amarisoft.digital.twin
+
+My contribution is the `dashboard_automation/` module, Grafana provisioning
+configuration, and the full `run_experiment1.sh` end-to-end pipeline.
 ```
 
 ---
 
-## 8. Data Pipeline
+## 20. What Screenshots to Capture
 
-### 8.1 Data Flow Diagram
+These are the exact screenshots you should take and where to place them in your GitHub documentation:
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          DATA PIPELINE                                  │
-└─────────────────────────────────────────────────────────────────────────┘
+### Screenshot 1 — Multipass VM Running
+**What:** Terminal on host showing `multipass list` with your VM in `Running` state
+**Command:** `multipass list`
+**Place:** README.md → Phase 1 section
+**Caption:** "Ubuntu 20.04 Multipass VM — the environment for the entire project"
 
-  ┌───────────────┐                                                         
-  │ Physical Twin │   (Reference measurement from Amarisoft CALLBOX)        
-  │ (Amarisoft)   │──────────────────┐                                     
-  └───────────────┘                  │ PCAP capture                        
-                                     ▼                                      
-  ┌───────────────┐         ┌─────────────────┐                            
-  │  test.pcap    │         │  Amarisoft KPIs │                            
-  │  (captured    │         │  (CQI, MCS, SNR │                            
-  │   traffic)    │         │   bitrate logs) │                            
-  └───────┬───────┘         └────────┬────────┘                            
-          │                          │                                      
-          │ tcpreplay injection       │ metric translation                  
-          ▼                          ▼                                      
-  ┌─────────────────────────────────────────────────────────────────────┐  
-  │                     DIGITAL TWIN ENVIRONMENT                        │  
-  │                                                                     │  
-  │  ┌──────────────────────────────────────────────────────────────┐  │  
-  │  │                    UPF Container(s)                          │  │  
-  │  │  pcap ──► tcpreplay ──► GTP-U interface ──► traffic flow    │  │  
-  │  └──────────────────────┬───────────────────────────────────────┘  │  
-  │                         │                                           │  
-  │  ┌──────────────────────▼───────────────────────────────────────┐  │  
-  │  │              twin_data_collector.py                          │  │  
-  │  │  ┌────────────────────────────────────────────────────────┐  │  │  
-  │  │  │  Metric Sources:                                       │  │  │  
-  │  │  │  • Docker stats API (/v1.43/containers/{id}/stats)     │  │  │  
-  │  │  │  • UERANSIM log stream (stdout parsing)                │  │  │  
-  │  │  │  • Open5GS log parsing (UPF session stats)            │  │  │  
-  │  │  │  • GTP tunnel counters (via /proc/net/*)               │  │  │  
-  │  │  └────────────────────────────────────────────────────────┘  │  │  
-  │  │                            │                                   │  │  
-  │  │                            ▼                                   │  │  
-  │  │              Normalized Metric Buffer                          │  │  
-  │  │  { ul_bitrate, dl_bitrate, cqi, mcs, snr, path_loss, ts }    │  │  
-  │  └──────────────────────────────────────────────────────────────┘  │  
-  └─────────────────────────────────────────────────────────────────────┘  
-                           │                                                 
-                           ▼                                                 
-  ┌──────────────────────────────────────────────────────────────────────┐  
-  │  combined_scraper.py                                                 │  
-  │  GET /metrics → Prometheus exposition format                        │  
-  │                                                                      │  
-  │  twin_ul_bitrate_mbps{ue="ue1"} 12.4                               │  
-  │  twin_dl_bitrate_mbps{ue="ue1"} 38.7                               │  
-  │  twin_cqi{ue="ue1"} 13                                              │  
-  │  twin_mcs{ue="ue1"} 24                                              │  
-  │  twin_snr_db{ue="ue1"} 28.5                                         │  
-  │  twin_path_loss_db{ue="ue1"} 72.3                                   │  
-  └──────────────────────────────────────────────────────────────────────┘  
-                           │                                                 
-                           ▼ (scrape every 5s)                               
-           Prometheus TSDB  ──────► Grafana Dashboard                        
-```
+### Screenshot 2 — Comnetsemu Working
+**What:** Terminal inside VM showing `sudo mn` launching successfully
+**Command:** `sudo mn` then `mininet> net`
+**Place:** README.md → Phase 2 section
+**Caption:** "Comnetsemu/Mininet confirmed working inside Multipass VM"
+
+### Screenshot 3 — 5G Stack Running
+**What:** Terminal showing Open5GS NFs starting and UERANSIM connecting
+**Command:** `sudo python3 modified.digital_twin_setup.py`
+**Look for:** `[info] gNB connected to AMF` and `PDU Session Establishment`
+**Place:** README.md → Phase 3/4 section
+**Caption:** "Open5GS + UERANSIM 5G stack running inside Containernet"
+
+### Screenshot 4 — The Friction Gap (use from your presentation PDF)
+**What:** The slide showing "THE CURRENT WORKFLOW: THE FRICTION GAP" with the blue/red boxes
+**Place:** README.md → Problem statement section
+**Caption:** "The problem: backend automated, but Grafana still required 4 manual steps"
+
+### Screenshot 5 — The Flask Controller UI
+**What:** Browser showing the Amarisoft Digital Twin Controller with Run Twin / Stop buttons and the live log console showing `[2/9] Starting modified digital twin setup...`
+**Place:** README.md → Solution section
+**Caption:** "The one-click controller: Run Twin triggers the full pipeline with live log feedback"
+
+### Screenshot 6 — Grafana Dashboard (MOST IMPORTANT)
+**What:** Browser showing `UniTN_Digital_Twin` dashboard with all 4 panels populated:
+- Physical Twin: UL Bitrate
+- Physical Twin: DL Bitrate
+- Digital Twin: UPF UL Bitrate
+- Digital Twin: UPF DL Bitrate
+**Place:** README.md → top of page and in Results section
+**Caption:** "UniTN_Digital_Twin dashboard — Physical and digital twin KPIs side by side in real time"
+**Note:** This screenshot exists in your presentation PDF (page 15). Use that as your reference.
+
+### Screenshot 7 — Prometheus Targets Page
+**What:** Browser at `http://192.168.2.2:9090/targets` showing all scrapers as `UP`
+**Place:** README.md → Monitoring section
+**Caption:** "Prometheus scrape targets — all exporters healthy"
+
+### Screenshot 8 — Repository Tree
+**What:** Terminal showing `tree -L 2` of the project
+**Command:** `tree -L 2 .`
+**Place:** README.md → Repository structure section
 
 ---
 
-## 9. Key Scripts Reference
-
-### 9.1 `run_experiment1.sh`
-
-**Type:** Bash orchestrator  
-**Purpose:** Master pipeline controller — runs the full experiment lifecycle  
-**Inputs:** None (all configuration via config files)  
-**Outputs:** Running Grafana dashboard with live metrics
-
-```bash
-#!/bin/bash
-set -euo pipefail
-
-LOG="experiment_$(date +%Y%m%d_%H%M%S).log"
-exec > >(tee -a "$LOG") 2>&1
-
-echo "[1/12] Cleaning environment..."
-bash scripts/clean.sh
-
-echo "[2/12] Starting data collector..."
-python3 collection/twin_data_collector.py &
-COLLECTOR_PID=$!
-
-echo "[3/12] Starting digital twin topology..."
-sudo python3 topology/modified.digital_twin_setup.py
-
-echo "[4/12] Waiting for containers..."
-bash scripts/wait_for_containers.sh
-
-echo "[5/12] Installing tcpreplay in UPFs..."
-docker exec upf1 apt-get install -y tcpreplay
-docker exec upf2 apt-get install -y tcpreplay
-
-echo "[6/12] Starting Prometheus..."
-prometheus --config.file=monitoring/prometheus.yml &
-
-echo "[7/12] Starting Grafana..."
-systemctl start grafana-server || grafana-server &
-
-echo "[8/12] Starting combined scraper..."
-python3 collection/combined_scraper.py &
-
-echo "[9/12] Regenerating Amarisoft traffic..."
-bash scripts/regen_traffic.sh
-
-echo "[10/12] Running PCAP replay..."
-python3 replay/test.pcap_replay_twin.py
-
-echo "[11/12] Metrics being scraped..."
-echo "[12/12] Visualization live at http://localhost:3000"
-```
-
-### 9.2 `clean.sh`
-
-**Type:** Bash cleanup  
-**Purpose:** Idempotent full reset — safe to run before any experiment
-
-```bash
-#!/bin/bash
-echo "=== Cleaning Digital Twin Environment ==="
-
-# Stop running experiment processes
-sudo pkill -f twin_data_collector || true
-sudo pkill -f combined_scraper || true
-sudo pkill -f digital_twin_setup || true
-sudo pkill -f tcpreplay || true
-sudo pkill -f prometheus || true
-
-# Containernet / Mininet cleanup
-sudo mn --clean 2>/dev/null || true
-
-# Docker container cleanup
-docker rm -f $(docker ps -aq) 2>/dev/null || true
-
-# Remove custom bridge networks
-sudo ip link del br-twin 2>/dev/null || true
-sudo ip link del br-open5gs 2>/dev/null || true
-
-# Flush Prometheus data (optional)
-# rm -rf /var/lib/prometheus/data/*
-
-echo "=== Environment Clean ==="
-```
-
-### 9.3 `modified.digital_twin_setup.py`
-
-**Type:** Python / Containernet topology script  
-**Purpose:** Instantiates the complete 5G network topology using Comnetsemu
-
-```python
-#!/usr/bin/env python3
-"""
-Modified Digital Twin Setup
-Builds a Containernet-based 5G network topology with:
-- Open5GS core (AMF, SMF, UPF, NRF, AUSF, PCF, UDM, UDR, BSF)
-- UERANSIM gNB and multi-UE nodes
-- Custom virtual link profiles
-"""
-
-from comnetsemu.net import Containernet
-from mininet.node import Controller
-from mininet.log import setLogLevel, info
-from mininet.link import TCLink
-
-def build_5g_topology():
-    net = Containernet(controller=Controller, link=TCLink)
-    info("*** Adding Open5GS Core containers\n")
-
-    # Core Network Functions
-    amf = net.addDockerHost('amf', dimage='open5gs-amf:latest',
-                             ip='192.168.0.1/24',
-                             dcmd='open5gs-amfd -c /etc/open5gs/amf.yaml')
-
-    smf = net.addDockerHost('smf', dimage='open5gs-smf:latest',
-                             ip='192.168.0.2/24',
-                             dcmd='open5gs-smfd -c /etc/open5gs/smf.yaml')
-
-    upf = net.addDockerHost('upf', dimage='open5gs-upf:latest',
-                             ip='192.168.1.1/24',
-                             dcmd='open5gs-upfd -c /etc/open5gs/upf.yaml')
-
-    # RAN Nodes
-    gnb = net.addDockerHost('gnb', dimage='ueransim:latest',
-                             ip='192.168.0.10/24',
-                             dcmd='./nr-gnb -c /etc/ueransim/gnb.yaml')
-
-    ue  = net.addDockerHost('ue',  dimage='ueransim:latest',
-                             ip='192.168.0.20/24',
-                             dcmd='./nr-ue -c /etc/ueransim/ue.yaml')
-
-    info("*** Creating virtual links\n")
-    net.addLink(gnb, amf, bw=1000, delay='1ms')   # N2
-    net.addLink(gnb, upf, bw=1000, delay='1ms')   # N3
-    net.addLink(ue,  gnb, bw=100,  delay='5ms')   # Uu (air interface)
-
-    info("*** Starting network\n")
-    net.start()
-    return net
-
-if __name__ == '__main__':
-    setLogLevel('info')
-    net = build_5g_topology()
-    input("Press Enter to stop...")
-    net.stop()
-```
-
-### 9.4 `twin_data_collector.py`
-
-**Type:** Python background agent  
-**Purpose:** Polls metric sources and normalizes into a shared buffer
-
-```python
-#!/usr/bin/env python3
-"""
-Twin Data Collector
-Background daemon that:
-1. Reads Docker container stats (CPU, memory, network I/O)
-2. Parses UERANSIM and Open5GS log streams for RAN KPIs
-3. Normalizes to Amarisoft metric naming conventions
-4. Writes to shared metric buffer (JSON file or in-memory dict)
-"""
-
-import time
-import json
-import docker
-import threading
-from pathlib import Path
-
-METRIC_FILE = "/tmp/twin_metrics.json"
-POLL_INTERVAL = 2  # seconds
-
-client = docker.from_env()
-
-def collect_upf_stats():
-    """Extract GTP tunnel counters from UPF container."""
-    ...
-
-def parse_ueransim_logs():
-    """Stream and parse UERANSIM stdout for CQI, MCS, SNR, path loss."""
-    ...
-
-def normalize_metrics(raw: dict) -> dict:
-    """Map raw values to Amarisoft KPI naming conventions."""
-    return {
-        "ul_bitrate_mbps": raw.get("uplink_throughput", 0) / 1e6,
-        "dl_bitrate_mbps": raw.get("downlink_throughput", 0) / 1e6,
-        "cqi":             raw.get("cqi", 0),
-        "mcs":             raw.get("mcs", 0),
-        "snr_db":          raw.get("snr", 0.0),
-        "path_loss_db":    raw.get("path_loss", 0.0),
-        "timestamp":       time.time()
-    }
-
-def run_collection_loop():
-    while True:
-        try:
-            raw = {**collect_upf_stats(), **parse_ueransim_logs()}
-            metrics = normalize_metrics(raw)
-            Path(METRIC_FILE).write_text(json.dumps(metrics))
-        except Exception as e:
-            print(f"[collector] Error: {e}")
-        time.sleep(POLL_INTERVAL)
-
-if __name__ == "__main__":
-    print("[collector] Starting twin data collector...")
-    run_collection_loop()
-```
-
-### 9.5 `combined_scraper.py`
-
-**Type:** Python HTTP server / Prometheus exporter  
-**Purpose:** Bridges the metric buffer to the Prometheus scrape endpoint
-
-```python
-#!/usr/bin/env python3
-"""
-Combined Scraper
-Prometheus-compatible exporter that reads from twin_data_collector
-and exposes metrics at :8000/metrics in text exposition format.
-"""
-
-import json
-import time
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from prometheus_client import Gauge, generate_latest, CONTENT_TYPE_LATEST
-
-METRIC_FILE = "/tmp/twin_metrics.json"
-
-# Prometheus Gauges
-ul_bitrate  = Gauge('twin_ul_bitrate_mbps', 'UL bitrate in Mbps', ['ue'])
-dl_bitrate  = Gauge('twin_dl_bitrate_mbps', 'DL bitrate in Mbps', ['ue'])
-cqi_gauge   = Gauge('twin_cqi', 'Channel Quality Indicator', ['ue'])
-mcs_gauge   = Gauge('twin_mcs', 'Modulation and Coding Scheme', ['ue'])
-snr_gauge   = Gauge('twin_snr_db', 'SNR in dB', ['ue'])
-pl_gauge    = Gauge('twin_path_loss_db', 'Path Loss in dB', ['ue'])
-
-def update_metrics():
-    with open(METRIC_FILE) as f:
-        m = json.load(f)
-    ul_bitrate.labels(ue='ue1').set(m['ul_bitrate_mbps'])
-    dl_bitrate.labels(ue='ue1').set(m['dl_bitrate_mbps'])
-    cqi_gauge.labels(ue='ue1').set(m['cqi'])
-    mcs_gauge.labels(ue='ue1').set(m['mcs'])
-    snr_gauge.labels(ue='ue1').set(m['snr_db'])
-    pl_gauge.labels(ue='ue1').set(m['path_loss_db'])
-
-class MetricsHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == '/metrics':
-            update_metrics()
-            output = generate_latest()
-            self.send_response(200)
-            self.send_header('Content-Type', CONTENT_TYPE_LATEST)
-            self.end_headers()
-            self.wfile.write(output)
-
-if __name__ == '__main__':
-    print("[scraper] Listening on :8000/metrics")
-    HTTPServer(('0.0.0.0', 8000), MetricsHandler).serve_forever()
-```
-
-### 9.6 `test.pcap_replay_twin.py`
-
-**Type:** Python traffic injector  
-**Purpose:** Replays captured PCAP traffic into the UPF container
-
-```python
-#!/usr/bin/env python3
-"""
-PCAP Replay Controller
-Injects a captured PCAP trace into the running UPF container
-using tcpreplay, simulating realistic traffic patterns matching
-the Amarisoft reference deployment.
-"""
-
-import subprocess
-import sys
-
-PCAP_FILE    = "replay/captures/test.pcap"
-UPF_CONTAINER = "upf"
-REPLAY_SPEED  = "2.0"   # 2× real-time replay
-INTERFACE     = "eth0"  # UPF internal interface
-
-def run_pcap_replay():
-    cmd = [
-        "docker", "exec", UPF_CONTAINER,
-        "tcpreplay",
-        "--intf1", INTERFACE,
-        "--multiplier", REPLAY_SPEED,
-        "--loop", "5",
-        PCAP_FILE
-    ]
-    print(f"[replay] Injecting {PCAP_FILE} at {REPLAY_SPEED}x speed...")
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"[replay] ERROR: {result.stderr}")
-        sys.exit(1)
-    print(f"[replay] Done. {result.stdout}")
-
-if __name__ == "__main__":
-    run_pcap_replay()
-```
-
----
-
-## 10. How `run_experiment1.sh` Works
-
-`run_experiment1.sh` is the single entry point for a complete experiment run. Its design follows these engineering principles:
-
-**Fail-fast execution:** The script uses `set -euo pipefail`, ensuring any unexpected failure immediately halts the pipeline rather than silently producing corrupt results.
-
-**Sequential dependency ordering:** Each stage is gated on the successful completion of the previous. Container health checks prevent premature metric collection against unready NFs.
-
-**Idempotency:** By invoking `clean.sh` as stage 1, the script is safe to re-run without manual cleanup between experiments.
-
-**Logging:** All output is mirrored to a timestamped log file via `tee`, providing a full audit trail for each experiment run.
-
-**Modularity:** Each stage maps 1:1 to a discrete subsystem, making it straightforward to skip, modify, or extend individual stages without disrupting the rest of the pipeline.
-
-**Exit trap:** A `trap` ensures `clean.sh` is called even if the script exits abnormally, preventing dangling containers and processes.
-
----
-
-## 11. Digital Twin Setup
-
-### 11.1 What is a Digital Twin in This Context?
-
-A **5G digital twin** is a software-defined replica of a physical 5G deployment that faithfully reproduces its:
-
-- **Control plane behavior** (NAS signaling, PDU session management)
-- **User plane behavior** (GTP-U tunneling, packet forwarding)
-- **Radio characteristics** (modeled via UERANSIM's channel simulation + PCAP injection)
-- **KPI output** (through metric normalization to match physical measurements)
-
-The goal is not pixel-perfect hardware emulation but **metric-level fidelity** — the digital twin should produce KPI time series that are statistically representative of the physical Amarisoft deployment under the same traffic conditions.
-
-### 11.2 Fidelity Mechanisms
-
-| Dimension | Mechanism |
-|-----------|-----------|
-| Traffic patterns | PCAP replay from real capture |
-| Core behavior | Open5GS (standards-compliant 3GPP) |
-| RAN signaling | UERANSIM (real NR protocol stack) |
-| Radio KPIs | UERANSIM configurable channel + scraper normalization |
-| Throughput scaling | tcpreplay multiplier controls load intensity |
-
-### 11.3 Comnetsemu Integration
-
-`modified.digital_twin_setup.py` extends the standard Comnetsemu API with:
-
-- Per-link bandwidth shaping mimicking realistic backhaul profiles
-- Custom Docker image references for pre-configured NF containers
-- Startup sequencing that respects 5G NF dependency order (NRF → AMF → SMF → UPF → gNB → UE)
-- Dynamic IP address assignment matching the `prometheus.yml` scrape target configuration
-
----
-
-## 12. Traffic Replay Subsystem
-
-### 12.1 Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                   TRAFFIC REPLAY SUBSYSTEM                      │
-└─────────────────────────────────────────────────────────────────┘
-
-  CAPTURE PHASE (offline, from physical Amarisoft testbed)
-  ┌──────────────────┐
-  │ Amarisoft CALLBOX│──► tcpdump / Wireshark capture
-  │  (physical)      │         │
-  └──────────────────┘         ▼
-                         test.pcap  (stored in replay/captures/)
-
-  REPLAY PHASE (online, inside digital twin)
-  ┌──────────────────────────────────────────────────────────────┐
-  │                       UPF Container                          │
-  │                                                              │
-  │   test.pcap ──► tcpreplay ──► eth0 ──► GTP-U processing     │
-  │                                                              │
-  │   tcpreplay flags:                                           │
-  │   --multiplier 2.0  (speed scaling)                          │
-  │   --loop 5          (repeat 5 times for sustained load)      │
-  │   --intf1 eth0      (inject on UPF N6 interface)             │
-  └──────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-                   GTP-U decapsulation → UE data plane
-```
-
-### 12.2 PCAP Replay Design Rationale
-
-Using real captured traffic rather than synthetic generators (iperf, ping) provides:
-
-- **Statistical realism:** Packet inter-arrival times, burst patterns, and application-layer payloads match the physical deployment
-- **Protocol diversity:** HTTP, DNS, video streaming, and other application profiles coexist naturally
-- **Determinism:** The same PCAP replayed at the same speed produces identical load profiles across runs
-- **Amarisoft parity:** Since the PCAP was captured on the reference Amarisoft hardware, its traffic pattern directly drives comparable KPI values in the twin
-
----
-
-## 13. Grafana + Prometheus Integration
-
-### 13.1 Dashboard Architecture
-
-The pre-built Grafana dashboard (`twin_dashboard.json`) contains the following panels:
-
-| Panel | Type | PromQL |
-|-------|------|--------|
-| UL Bitrate | Time series | `twin_ul_bitrate_mbps{ue="ue1"}` |
-| DL Bitrate | Time series | `twin_dl_bitrate_mbps{ue="ue1"}` |
-| CQI | Gauge + sparkline | `twin_cqi{ue="ue1"}` |
-| MCS Index | Time series | `twin_mcs{ue="ue1"}` |
-| SNR | Time series | `twin_snr_db{ue="ue1"}` |
-| Path Loss | Time series | `twin_path_loss_db{ue="ue1"}` |
-| Combined Bitrate | Dual-axis | `twin_ul_bitrate_mbps + twin_dl_bitrate_mbps` |
-
-### 13.2 Auto-Provisioning
-
-Grafana provisioning files in `monitoring/grafana/provisioning/` ensure that datasources and dashboards are loaded automatically on startup with no manual UI configuration:
-
-```
-monitoring/grafana/provisioning/
-├── datasources/
-│   └── prometheus.yml     # Registers Prometheus at localhost:9090
-└── dashboards/
-    └── dashboard.yml      # Loads twin_dashboard.json from dashboards/
-```
-
-### 13.3 Access
-
-| Service | URL | Default Credentials |
-|---------|-----|-------------------|
-| Grafana | http://localhost:3000 | admin / admin |
-| Prometheus | http://localhost:9090 | — |
-| Metrics endpoint | http://localhost:8000/metrics | — |
-| Flask controller | http://localhost:5000 | — |
-
----
-
-## 14. Observability Design
-
-### 14.1 Design Philosophy
-
-The observability stack follows the **three pillars** model adapted for network research:
-
-| Pillar | Implementation | Purpose |
-|--------|---------------|---------|
-| **Metrics** | Prometheus + combined_scraper | Quantitative KPI tracking |
-| **Logs** | Timestamped per-stage logs in `run_experiment1.sh` | Audit trail and debugging |
-| **Traces** | PCAP capture of replayed traffic | Packet-level forensics |
-
-### 14.2 Metric Naming Convention
-
-All metrics exposed by `combined_scraper.py` follow the pattern:
-
-```
-twin_{metric_name}_{unit}[{label}]
-```
-
-Examples:
-```
-twin_ul_bitrate_mbps{ue="ue1"}
-twin_dl_bitrate_mbps{ue="ue1"}
-twin_cqi{ue="ue1"}
-twin_mcs{ue="ue1"}
-twin_snr_db{ue="ue1"}
-twin_path_loss_db{ue="ue1"}
-```
-
-### 14.3 Scrape Topology
-
-```
-Prometheus scrapes every 5 seconds:
-
-  :8000  ← combined_scraper.py     (twin KPIs)
-  :9090  ← prometheus self-scrape  (internal metrics)
-  :9100  ← node_exporter           (host system)
-  :9091  ← upf_exporter            (UPF container stats)
-  :9092  ← gnb_stats               (gNB throughput)
-```
-
----
-
-## 15. One-Click Flask Controller
-
-### 15.1 Overview
-
-`controller/app.py` provides a lightweight single-page web UI for manual control of the experiment pipeline. It exposes three operations via REST endpoints backed by a Flask server.
-
-### 15.2 Architecture
-
-```
-Browser ──► http://localhost:5000
-              │
-              ├── GET  /          → Status dashboard page
-              ├── POST /run       → Triggers run_experiment1.sh
-              ├── POST /stop      → Sends SIGTERM to running processes
-              └── POST /clean     → Runs clean.sh
-```
-
-### 15.3 Implementation
-
-```python
-#!/usr/bin/env python3
-"""
-Flask Controller — One-Click Experiment UI
-"""
-import subprocess
-from flask import Flask, jsonify, render_template_string
-
-app = Flask(__name__)
-
-HTML = """
-<!DOCTYPE html>
-<html>
-<head><title>Digital Twin Controller</title>
-<style>
-  body { font-family: monospace; background: #1a1a2e; color: #e0e0e0; padding: 40px; }
-  h1   { color: #00d4ff; }
-  .btn { padding: 12px 24px; margin: 8px; border: none; border-radius: 4px;
-         font-size: 16px; cursor: pointer; }
-  .run   { background: #00b894; color: white; }
-  .stop  { background: #d63031; color: white; }
-  .clean { background: #fdcb6e; color: #2d3436; }
-  pre    { background: #2d3436; padding: 16px; border-radius: 4px; }
-</style></head>
-<body>
-  <h1>⚡ Amarisoft Digital Twin Controller</h1>
-  <button class="btn run"   onclick="post('/run')">▶ Run Experiment</button>
-  <button class="btn stop"  onclick="post('/stop')">⏹ Stop</button>
-  <button class="btn clean" onclick="post('/clean')">🧹 Clean</button>
-  <pre id="log">Ready.</pre>
-  <script>
-    async function post(url) {
-      const r = await fetch(url, {method:'POST'});
-      const d = await r.json();
-      document.getElementById('log').textContent = d.output;
-    }
-  </script>
-</body>
-</html>
-"""
-
-@app.route('/')
-def index():
-    return render_template_string(HTML)
-
-@app.route('/run', methods=['POST'])
-def run():
-    result = subprocess.run(['bash', 'scripts/run_experiment1.sh'],
-                            capture_output=True, text=True, timeout=300)
-    return jsonify({"output": result.stdout + result.stderr})
-
-@app.route('/stop', methods=['POST'])
-def stop():
-    subprocess.run(['sudo', 'pkill', '-f', 'run_experiment'], capture_output=True)
-    return jsonify({"output": "Experiment stopped."})
-
-@app.route('/clean', methods=['POST'])
-def clean():
-    result = subprocess.run(['bash', 'scripts/clean.sh'],
-                            capture_output=True, text=True)
-    return jsonify({"output": result.stdout})
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False)
-```
-
----
-
-## 16. Installation Guide
-
-### 16.1 Prerequisites
-
-| Requirement | Version | Notes |
-|-------------|---------|-------|
-| OS | Ubuntu 22.04 LTS | Tested platform |
-| Python | 3.10+ | System Python |
-| Docker | 24.x | Engine + CLI |
-| Docker Compose | 2.x | Optional |
-| Containernet | latest | Built from source |
-| Comnetsemu | latest | Built from source |
-| Prometheus | 2.x | Binary or package |
-| Grafana | 10.x | OSS edition |
-| tcpreplay | 4.x | Installed in containers at runtime |
-
-### 16.2 Step-by-Step Installation
-
-#### Step 1 — System Dependencies
-
-```bash
-sudo apt-get update && sudo apt-get install -y \
-    git curl wget python3-pip \
-    docker.io docker-compose \
-    net-tools iproute2 \
-    tcpdump wireshark-common \
-    build-essential cmake \
-    libsctp-dev libssl-dev
-```
-
-#### Step 2 — Comnetsemu / Containernet
-
-```bash
-git clone https://github.com/containernet/containernet.git
-cd containernet
-sudo python3 setup.py install
-cd ..
-
-git clone https://github.com/stevelorenz/comnetsemu.git
-cd comnetsemu
-sudo ./util/install.sh
-cd ..
-```
-
-#### Step 3 — Prometheus
-
-```bash
-wget https://github.com/prometheus/prometheus/releases/download/v2.51.0/prometheus-2.51.0.linux-amd64.tar.gz
-tar xvf prometheus-*.tar.gz
-sudo mv prometheus-*/prometheus /usr/local/bin/
-sudo mv prometheus-*/promtool  /usr/local/bin/
-```
-
-#### Step 4 — Grafana
-
-```bash
-sudo apt-get install -y apt-transport-https software-properties-common
-wget -q -O - https://packages.grafana.com/gpg.key | sudo apt-key add -
-echo "deb https://packages.grafana.com/oss/deb stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
-sudo apt-get update && sudo apt-get install -y grafana
-```
-
-#### Step 5 — Python Dependencies
-
-```bash
-cd amarisoft-digital-twin
-pip3 install -r requirements.txt
-```
-
-**`requirements.txt`:**
-```
-flask>=3.0
-prometheus-client>=0.20
-docker>=7.0
-requests>=2.31
-scapy>=2.5
-```
-
-#### Step 6 — Docker Images
-
-```bash
-# Build Open5GS image
-docker build -t open5gs-amf:latest -f docker/Dockerfile.open5gs --target amf .
-docker build -t open5gs-upf:latest -f docker/Dockerfile.open5gs --target upf .
-
-# Build UERANSIM image
-docker build -t ueransim:latest -f docker/Dockerfile.ueransim .
-```
-
-#### Step 7 — Permissions
-
-```bash
-# Allow Docker without sudo
-sudo usermod -aG docker $USER
-newgrp docker
-
-# Allow Mininet raw socket operations
-sudo setcap cap_net_raw,cap_net_admin=eip $(which python3)
-```
-
----
-
-## 17. Usage Guide
-
-### 17.1 Running a Full Experiment
-
-```bash
-# Clone and enter project
-git clone https://github.com/your-org/amarisoft-digital-twin.git
-cd amarisoft-digital-twin
-
-# Run full experiment (automated pipeline)
-bash scripts/run_experiment1.sh
-```
-
-After ~2 minutes, the following services will be available:
-
-- **Grafana Dashboard:** http://localhost:3000 (admin/admin)
-- **Prometheus:** http://localhost:9090
-- **Raw Metrics:** http://localhost:8000/metrics
-- **Flask Controller:** http://localhost:5000
-
-### 17.2 Using the Flask Controller
-
-```bash
-# Start the controller UI
-python3 controller/app.py
-
-# Navigate to http://localhost:5000
-# Use Run / Stop / Clean buttons
-```
-
-### 17.3 Running Individual Stages
-
-```bash
-# Clean environment only
-bash scripts/clean.sh
-
-# Start topology only
-sudo python3 topology/modified.digital_twin_setup.py
-
-# Start monitoring only
-prometheus --config.file=monitoring/prometheus.yml &
-systemctl start grafana-server
-
-# Start scraper only
-python3 collection/combined_scraper.py
-
-# Run PCAP replay only
-python3 replay/test.pcap_replay_twin.py
-```
-
-### 17.4 Viewing Metrics
-
-**Via Grafana (recommended):**
-1. Open http://localhost:3000
-2. Navigate to Dashboards → `Twin KPI Dashboard`
-3. Set time range to `Last 15 minutes`
-4. All 6 KPI panels will display live data
-
-**Via Prometheus PromQL:**
-```promql
-# Current UL bitrate
-twin_ul_bitrate_mbps{ue="ue1"}
-
-# Average DL bitrate over last 5 minutes
-avg_over_time(twin_dl_bitrate_mbps{ue="ue1"}[5m])
-
-# CQI heatmap
-twin_cqi
-```
-
-**Via raw HTTP:**
-```bash
-curl http://localhost:8000/metrics
-```
-
-### 17.5 Stopping and Cleaning
-
-```bash
-# Stop experiment processes (keep containers)
-bash scripts/stop.sh
-
-# Full cleanup (recommended between experiments)
-bash scripts/clean.sh
-```
-
----
-
-## 18. Future Improvements
-
-### 18.1 Near-Term Enhancements
-
-- **Multi-UE scaling:** Extend the topology to support 10–50 simultaneous UE instances with per-UE KPI tracking and Grafana label filtering
-- **Adaptive PCAP replay:** Implement a feedback controller that adjusts `tcpreplay` multiplier based on real-time CQI readings, enabling closed-loop traffic adaptation
-- **Open5GS metrics exporter:** Build a dedicated Prometheus exporter that parses Open5GS internal counters (PDU sessions, bytes per UE) rather than relying on log parsing
-- **Automated PCAP capture pipeline:** Add a capture trigger that automatically records PCAP traces from the physical Amarisoft testbed via SSH when a new baseline profile is needed
-
-### 18.2 Research Extensions
-
-- **ML-based KPI prediction:** Train a time-series model (LSTM or Transformer) on the collected metrics to predict future CQI/throughput degradation
-- **Slice emulation:** Add network slicing support to Open5GS/UERANSIM and expose per-slice KPIs in Grafana
-- **Interference modeling:** Inject inter-cell interference via configurable noise sources in UERANSIM to study robustness under realistic RF conditions
-- **Anomaly detection:** Integrate Grafana alerting with a Prometheus alertmanager to flag KPI deviations from baseline
-
-### 18.3 Infrastructure Improvements
-
-- **Helm chart:** Package the entire stack as a Helm chart for Kubernetes-based deployment, enabling cloud-native scaling
-- **CI/CD integration:** Add GitHub Actions workflows that automatically run regression experiments on each commit, comparing KPI outputs against stored baselines
-- **Docker Compose profile:** Provide a `docker-compose.yml` alternative for environments where Containernet is unavailable
-- **Persistent Prometheus storage:** Mount a named Docker volume for Prometheus TSDB to preserve data across `clean.sh` invocations
-- **Dashboard templating:** Parameterize Grafana dashboards to support variable UE count and experiment duration without JSON editing
-
----
-
-## 19. Conclusion
-
-The **Amarisoft Digital Twin Automation with Observability** platform demonstrates that a fully automated, research-grade 5G digital twin is achievable on commodity Linux hardware using exclusively open-source components.
-
-By combining Comnetsemu's programmable network emulation with Open5GS's standards-compliant 5G core and UERANSIM's realistic RAN simulation — and grounding the traffic environment in real PCAP captures from an Amarisoft reference deployment — the platform achieves **metric-level fidelity** to a physical 5G testbed.
-
-The end-to-end automation pipeline (`run_experiment1.sh`) eliminates the manual overhead traditionally associated with network experimentation, enabling **reproducible, scripted test campaigns** that can be re-run deterministically across different hardware environments.
-
-The Prometheus + Grafana observability stack provides researchers with real-time visibility into the full radio KPI surface (UL/DL bitrate, CQI, MCS, SNR, path loss) through a pre-built dashboard that requires zero manual configuration — loaded automatically via Grafana provisioning on every run.
-
-This platform serves as a foundation for advanced research in areas including 5G performance modeling, ML-based KPI prediction, network slicing, and closed-loop RAN control — all without requiring access to dedicated hardware.
+## 21. Conclusion
+
+This project went through five clearly defined phases to arrive at a working, one-click 5G digital twin observability platform:
+
+1. **A Multipass VM** provided the isolated Linux environment needed to run network emulation on any host OS
+2. **Comnetsemu** (Granelli Lab) provided the Docker-in-Mininet network emulation fabric
+3. **comnetsemu_5Gnet** (Granelli Lab) provided the Open5GS + UERANSIM 5G topology foundation
+4. **Amarisoft.digital.twin** (TatendaHZ) provided the dual-twin architecture, 4-slice UPF design, PCAP capture/replay pipeline, and monitoring scaffolding
+5. **My automation work** — the `dashboard_automation/` module — solved the final "friction gap" by replacing 4 manual Grafana steps with Grafana provisioning (config-as-code), a Flask controller with live log streaming, and deterministic dashboard URLs via a hardcoded UID
+
+The result satisfies all four original objectives:
+
+| Objective | Result |
+|-----------|--------|
+| Zero-touch dashboard configuration | ✅ Grafana provisioning via volume mounts |
+| Deterministic URL | ✅ `uid: cfajos0kkl81sb` — always the same URL |
+| Auto-connected datasource | ✅ `ds.yaml` pre-wires Prometheus at container start |
+| UI feedback loop | ✅ Flask controller with live logs and health-check auto-open |
+
+**Final success metrics:**
+- Manual steps after running the script: **0**
+- Dashboard URL deterministic: **Yes**
+- Total setup time: **< 2 minutes**
+- User actions required: **1 click**
 
 ---
 
 <div align="center">
 
-**Built for 5G Research — Automated, Observable, Reproducible**
+**Built on Ubuntu Multipass · Open5GS · UERANSIM · Comnetsemu · Prometheus · Grafana**
 
-*Contributions, issues, and pull requests are welcome.*
+*Acknowledging: Granelli Lab (Comnetsemu, comnetsemu_5Gnet) and TatendaHZ (Amarisoft.digital.twin)*
 
 </div>
